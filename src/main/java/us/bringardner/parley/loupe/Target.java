@@ -47,6 +47,7 @@ public final class Target {
 	private final TargetStateMachine machine = new TargetStateMachine();
 	private final BreakpointTable breakpoints = new BreakpointTable();
 	private volatile Object userData;
+	private volatile boolean startPaused;
 
 	Target(String id, TargetRegistry registry) {
 		this.id = id;
@@ -72,6 +73,19 @@ public final class Target {
 
 	public BreakpointTable getBreakpoints() {
 		return breakpoints;
+	}
+
+	/**
+	 * True if the client asked (launch or attach with startPaused) for the target to be paused
+	 * before it runs anything. The backend then starts the debuggee suspended and calls
+	 * {@link #paused} with reason "entry" before the launch future completes.
+	 */
+	public boolean isStartPaused() {
+		return startPaused;
+	}
+
+	void setStartPaused(boolean startPaused) {
+		this.startPaused = startPaused;
 	}
 
 	/** For the backend's use: whatever it keeps for a target (the process, a connection ...). */
@@ -112,7 +126,8 @@ public final class Target {
 	 * The target stopped. The snapshot is sent only if the session negotiated the snapshot
 	 * feature.
 	 * @param reason "breakpoint", "step", "pause", "exception", "entry" ...
-	 * @param snapshot what to show, or null
+	 * @param snapshot what to show, or null; its object ids are of the generation the target
+	 *        had before this call (see {@link #pausedWith})
 	 * @param breakpointIds the breakpoints that were hit, or null
 	 * @throws LoupeException wrongState if it isn't running
 	 */
@@ -122,6 +137,24 @@ public final class Target {
 			e.setBreakpoints(breakpointIds);
 			if( registry.hasFeature(Loupe.FEATURE_SNAPSHOT)) {
 				e.setSnapshot(snapshot);
+			}
+			send(e);
+			return e;
+		}
+	}
+
+	/**
+	 * Like {@link #paused(String, Snapshot, List)}, with the snapshot made after the target
+	 * has moved to its new generation. Use this when the snapshot holds object ids made with
+	 * {@link #objectId}: a snapshot made before the call has the previous generation's ids,
+	 * which the next request would refuse as stale.
+	 */
+	public TargetStateEvent pausedWith(String reason, java.util.function.Supplier<Snapshot> snapshot, List<String> breakpointIds) {
+		synchronized (this) {
+			TargetStateEvent e = machine.move(TargetState.PAUSED, reason);
+			e.setBreakpoints(breakpointIds);
+			if( registry.hasFeature(Loupe.FEATURE_SNAPSHOT) && snapshot != null ) {
+				e.setSnapshot(snapshot.get());
 			}
 			send(e);
 			return e;

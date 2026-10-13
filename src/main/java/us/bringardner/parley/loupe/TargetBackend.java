@@ -53,6 +53,9 @@ public interface TargetBackend {
 	 * Starts a debuggee. The target is already running when this is called (so it may pause
 	 * at once, to stop on entry); if the future fails, the target is terminated and the
 	 * launch request fails with the same error.
+	 * If {@link Target#isStartPaused} is true the debuggee must be created suspended and the
+	 * backend must call {@link Target#paused} (reason "entry") before the future completes;
+	 * a launch that is still running then is terminated and fails with notSupported.
 	 * @param args the launch arguments, already checked against the launchSchema (an empty
 	 *        object if the client sent none)
 	 */

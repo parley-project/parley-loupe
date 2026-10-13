@@ -237,6 +237,7 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			SchemaValidator.check(schema, args);
 		}
 		Target t = registry.create(p.getTarget());
+		t.setStartPaused(Boolean.TRUE.equals(p.getStartPaused()));
 		t.running(attach ? "attach" : "launch");
 		CompletableFuture<Void> f;
 		try {
@@ -251,6 +252,14 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 					t.terminated(attach ? "attachFailed" : "launchFailed", null);
 				}
 				throw e instanceof CompletionException ? (CompletionException) e : new CompletionException(e);
+			}
+			if( t.isStartPaused() && !TargetState.PAUSED.equals(t.getState())) {
+				// it was asked to wait for the client's breakpoints, and is running without them
+				LoupeException le = new LoupeException(LoupeException.NOT_SUPPORTED, "The adapter did not start the target paused");
+				if( !t.isTerminated()) {
+					t.terminated(attach ? "attachFailed" : "launchFailed", null);
+				}
+				throw le;
 			}
 			Map<String,Object> ret = new LinkedHashMap<>();
 			ret.put("target", t.getId());

@@ -65,6 +65,12 @@ failures come back as `invalidParams` with the JSON Pointer of each bad member i
 same, checked against `attachSchema` (absent from the welcome if the adapter can't attach,
 and `attach` then fails with `notSupported`).
 
+`startPaused: true` (a member of the params, beside `args`) asks for the target to be paused
+(reason `entry`) before it runs anything; the response then says `"state":"paused"`. The
+client sets its breakpoints, then sends `resume`. An adapter that can't do this fails the
+request with `notSupported` and ends the target. This is how breakpoints are set before the
+script runs: there is no separate configuration phase.
+
 The target is `running` (event `targetState`, reason `launch` or `attach`) before the adapter
 starts the debuggee, so it may pause at once, to stop on entry. The response is
 `{"target":"t1","state":"running"}` once the debuggee has started. If starting fails, the
@@ -119,6 +125,8 @@ a new generation) and the request fails.
     "locals":[{"name":"n","value":{"t":"number","v":3,"kind":"int"}}]}}}
 ```
 
+`totalFrames` (optional) is how many frames the stack has; when it is no more than
+`frames.length` the snapshot holds the whole stack and a client never needs `frames`.
 `frames` holds the top `snapshotFrames` frames (default 20; `snapshotLimits` on `launch`),
 `locals` those of the first frame. More are fetched with `frames`, `locals`, `scopes`.
 
@@ -203,17 +211,27 @@ thread" or "current frame" state in the adapter.
 
 ## 9. Mapping to DAP (the bridge)
 
+`us.bringardner.parley.loupe.dap.DapBridge` is a DAP adapter that is a Loupe client. One DAP
+session is one target, `t1`.
+
 | DAP | Loupe |
 |---|---|
-| `initialize` | `hello` |
-| `launch` / `attach` | `launch` / `attach` (target id made by the bridge) |
-| `setBreakpoints` (a file's whole list) | diff against the bridge's list: `addBreakpoint` / `removeBreakpoint` |
-| `stopped` | `targetState` to `paused`; the bridge caches the snapshot and answers `threads`, `stackTrace`, `scopes`, `variables` from it when it can |
-| `variablesReference` | the bridge's table of object ids |
-| `continue`, `next`, `stepIn`, `stepOut`, `pause` | `resume`, `step {kind}`, `pause` |
-| `terminated`, `exited` | `targetState` to `terminated` |
+| `initialize` | `hello` (asks for `snapshot`) |
+| `launch` / `attach` | `launch` / `attach` with `startPaused`; members of the request go to `args`, except `noDebug`, `restart`, `__*` and `stopOnEntry`. `initialized` follows the response |
+| `setBreakpoints` (a file's whole list) | diff against the bridge's list: `removeBreakpoint` for those gone, `addBreakpoint` for new ones; DAP ids are the bridge's, Loupe ids are `b<id>`. A hit condition must be a whole number (`hitCount`) |
+| `configurationDone` | `resume`; with `stopOnEntry`, the entry stop is reported instead |
+| `stopped` event | `targetState` to `paused`; the snapshot answers `threads`, `stackTrace` and the locals of the top frame without a request |
+| `continued` event | `targetState` to `running` that the client did not ask for |
+| `exited`, `terminated` events | `targetState` to `terminated` (`exitCode`) |
+| `breakpoint` event | `breakpointStatus` |
+| `continue`, `next`, `stepIn`, `stepOut`, `pause` | `resume`, `step {kind: over, in, out}`, `pause` |
+| `stackTrace`, `scopes`, `variables` | `frames` (or the snapshot), `scopes`, `children` (or the snapshot's locals) |
+| `threads` | `threads` (or the snapshot) |
+| `terminate`, `disconnect` | `terminate` (disconnect only when the bridge launched the target, or `terminateDebuggee`) |
+| frame and `variablesReference` numbers | the bridge's table of Loupe ids, dropped at every state change |
 
-DAP cannot say "what changed since", so `objectChanges` is not used by the bridge.
+Not mapped: evaluate, completions, function, data and exception breakpoints, modules, memory,
+`setVariable`. `objectChanges` is not used: DAP cannot say "what changed since".
 
 ## 10. Decided and open
 

@@ -35,6 +35,7 @@ public class LaunchParams implements JsonValue {
 
 	private String target;
 	private Object args;
+	private Boolean startPaused;
 
 	/** The id the client gives the new target. */
 	public String getTarget() {
@@ -56,11 +57,22 @@ public class LaunchParams implements JsonValue {
 		return this;
 	}
 
+	/** The target must be paused (reason "entry") before it runs anything, so the client can set breakpoints first; it then resumes. */
+	public Boolean getStartPaused() {
+		return startPaused;
+	}
+
+	public LaunchParams setStartPaused(Boolean startPaused) {
+		this.startPaused = startPaused;
+		return this;
+	}
+
 	@Override
 	public Object toJson() {
 		Map<String,Object> json = new LinkedHashMap<>();
 		JsonValues.put(json, "target", target);
 		JsonValues.put(json, "args", args);
+		JsonValues.put(json, "startPaused", startPaused);
 		return json;
 	}
 
@@ -80,6 +92,7 @@ public class LaunchParams implements JsonValue {
 			throw new JsonException(what+" needs target");
 		}
 		ret.args = JsonValues.any(m.get("args"), what+".args");
+		ret.startPaused = JsonValues.bool(m.get("startPaused"), what+".startPaused");
 		return ret;
 	}
 }

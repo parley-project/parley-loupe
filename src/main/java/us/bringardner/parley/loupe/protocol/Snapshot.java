@@ -37,6 +37,7 @@ public class Snapshot implements JsonValue {
 	private List<ThreadInfo> threads;
 	private Integer thread;
 	private List<Frame> frames;
+	private Integer totalFrames;
 	private List<Variable> locals;
 
 	/** All the threads. */
@@ -69,6 +70,16 @@ public class Snapshot implements JsonValue {
 		return this;
 	}
 
+	/** How many frames the thread's stack has, if known; when it is no more than frames.size() the snapshot has them all. */
+	public Integer getTotalFrames() {
+		return totalFrames;
+	}
+
+	public Snapshot setTotalFrames(Integer totalFrames) {
+		this.totalFrames = totalFrames;
+		return this;
+	}
+
 	/** The locals of the first frame. */
 	public List<Variable> getLocals() {
 		return locals;
@@ -85,6 +96,7 @@ public class Snapshot implements JsonValue {
 		JsonValues.put(json, "threads", JsonValues.toJson(threads, JsonValues::toJson));
 		JsonValues.put(json, "thread", thread);
 		JsonValues.put(json, "frames", JsonValues.toJson(frames, JsonValues::toJson));
+		JsonValues.put(json, "totalFrames", totalFrames);
 		JsonValues.put(json, "locals", JsonValues.toJson(locals, JsonValues::toJson));
 		return json;
 	}
@@ -103,6 +115,7 @@ public class Snapshot implements JsonValue {
 		ret.threads = JsonValues.list(m.get("threads"), what+".threads", ThreadInfo::fromJson);
 		ret.thread = JsonValues.integer(m.get("thread"), what+".thread");
 		ret.frames = JsonValues.list(m.get("frames"), what+".frames", Frame::fromJson);
+		ret.totalFrames = JsonValues.integer(m.get("totalFrames"), what+".totalFrames");
 		ret.locals = JsonValues.list(m.get("locals"), what+".locals", Variable::fromJson);
 		return ret;
 	}

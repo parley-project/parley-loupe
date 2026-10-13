@@ -229,6 +229,21 @@ public class TestAdapterHandler {
 	}
 
 	@Test
+	public void startPausedNeedsABackendThatPauses() throws Exception {
+		hello();
+		// stopOnEntry makes this backend pause; without it the launch keeps running, which startPaused forbids
+		Map<String,Object> p = launch("t1", Map.of("script", "a", "stopOnEntry", true));
+		p.put("startPaused", true);
+		assertEquals(Map.of("target", "t1", "state", "paused"), call("launch", null, p));
+		assertTrue(handler.getTargets().get("t1").isStartPaused());
+
+		Map<String,Object> q = launch("t2", Map.of("script", "a"));
+		q.put("startPaused", true);
+		assertEquals(LoupeException.NOT_SUPPORTED, fails("launch", null, q).getCode());
+		assertTrue(handler.getTargets().get("t2").isTerminated());
+	}
+
+	@Test
 	public void attachNeedsAnAttachSchemaAndABackendThatCan() throws Exception {
 		hello();
 		assertEquals(LoupeException.NOT_SUPPORTED, fails("attach", null, launch("t1", Map.of())).getCode());
