@@ -24,9 +24,20 @@
  */
 package us.bringardner.parley.loupe;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.FramesParams;
+import us.bringardner.parley.loupe.protocol.FramesResult;
+import us.bringardner.parley.loupe.protocol.LocalsParams;
+import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
+import us.bringardner.parley.loupe.protocol.ObjectChangesResult;
+import us.bringardner.parley.loupe.protocol.ScopesParams;
+import us.bringardner.parley.loupe.protocol.ScopesResult;
 import us.bringardner.parley.loupe.protocol.StepParams;
+import us.bringardner.parley.loupe.protocol.ThreadInfo;
+import us.bringardner.parley.loupe.protocol.VariablesResult;
 
 /**
  * What an adapter does for the targets: start (or attach to) a debuggee, and install and
@@ -66,7 +77,8 @@ public interface TargetBackend {
 	}
 
 	/**
-	 * Which of the methods resume, step, pause and terminate (names in
+	 * Which of the methods resume, step, pause, terminate, threads, frames, scopes, locals,
+	 * children and objectChanges (names in
 	 * {@link us.bringardner.parley.loupe.protocol.Loupe}) the backend implements. The others
 	 * are refused with notSupported before the target's state is touched.
 	 */
@@ -108,6 +120,57 @@ public interface TargetBackend {
 	 */
 	default CompletableFuture<Void> terminate(Target target) {
 		return notSupported();
+	}
+
+	// ---- the stack and values: asked only while the target is paused
+
+	/**
+	 * The target's threads (also asked while it runs). {@link #supports} the method
+	 * {@code threads} says whether this is implemented.
+	 */
+	default CompletableFuture<List<ThreadInfo>> threads(Target target) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * A thread's frames. The handler has checked that the target is paused and that start is
+	 * not below 0 (it is set to 0 if the client left it out); count may be null.
+	 */
+	default CompletableFuture<FramesResult> frames(Target target, FramesParams params) {
+		return notSupportedResult();
+	}
+
+	/** The scopes of a frame. The frame id is current: the handler has checked its generation. */
+	default CompletableFuture<ScopesResult> scopes(Target target, ScopesParams params) {
+		return notSupportedResult();
+	}
+
+	/** The locals of a frame (the same as the variables of its scope named "locals"). */
+	default CompletableFuture<VariablesResult> locals(Target target, LocalsParams params) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * The parts of an array, map, object or scope: its elements, entries (named by the key's
+	 * display text) or fields. The id is current, or has no generation.
+	 */
+	default CompletableFuture<VariablesResult> children(Target target, ChildrenParams params) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * The objects that changed since a generation (0 or more, up to the current one); asked
+	 * only when the objectChanges feature was negotiated. The handler fills in the
+	 * generation if the result leaves it out.
+	 */
+	default CompletableFuture<ObjectChangesResult> objectChanges(Target target, ObjectChangesParams params) {
+		return notSupportedResult();
+	}
+
+	private static <T> CompletableFuture<T> notSupportedResult() {
+		CompletableFuture<T> f = new CompletableFuture<>();
+		f.completeExceptionally(new LoupeException(LoupeException.NOT_SUPPORTED, "Not supported by this adapter"));
+		return f;
 	}
 
 	private static CompletableFuture<Void> notSupported() {

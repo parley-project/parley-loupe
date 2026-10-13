@@ -29,6 +29,7 @@ import java.util.List;
 
 import us.bringardner.parley.loupe.protocol.BreakpointStatusEvent;
 import us.bringardner.parley.loupe.protocol.Loupe;
+import us.bringardner.parley.loupe.protocol.ObjectId;
 import us.bringardner.parley.loupe.protocol.Location;
 import us.bringardner.parley.loupe.protocol.Snapshot;
 import us.bringardner.parley.loupe.protocol.TargetState;
@@ -80,6 +81,14 @@ public final class Target {
 
 	public void setUserData(Object userData) {
 		this.userData = userData;
+	}
+
+	/**
+	 * The id of an object of this target in the current generation: name@generation.
+	 * Values the backend sends carry ids made with this.
+	 */
+	public String objectId(String name) {
+		return new ObjectId(name, machine.getGeneration()).toString();
 	}
 
 	/** Checks the target is in one of these states (see TargetStateMachine.require). */

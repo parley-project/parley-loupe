@@ -29,11 +29,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import us.bringardner.parley.dap.json.JsonException;
+import us.bringardner.parley.dap.json.JsonValue;
+import us.bringardner.parley.dap.json.JsonValues;
 import us.bringardner.parley.loupe.protocol.AddBreakpointParams;
 import us.bringardner.parley.loupe.protocol.BreakpointResult;
+import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.FramesParams;
+import us.bringardner.parley.loupe.protocol.LocalsParams;
+import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
+import us.bringardner.parley.loupe.protocol.ObjectId;
+import us.bringardner.parley.loupe.protocol.ScopesParams;
+import us.bringardner.parley.loupe.protocol.ThreadInfo;
+import us.bringardner.parley.loupe.protocol.ThreadsResult;
 import us.bringardner.parley.loupe.protocol.Hello;
 import us.bringardner.parley.loupe.protocol.LaunchParams;
 import us.bringardner.parley.loupe.protocol.Loupe;
@@ -139,6 +150,33 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			return pause(target);
 		case Loupe.TERMINATE:
 			return terminate(target);
+		case Loupe.THREADS:
+			return threads(target);
+		case Loupe.FRAMES:
+			// every member is optional: no params is the same as {}
+			return inspect(target, method, params == null ? new LinkedHashMap<String,Object>() : params, FramesParams::fromJson,
+					(t, p) -> page(p.getStart(), p.getCount(), p::setStart),
+					(t, p) -> backend.frames(t, p));
+		case Loupe.SCOPES:
+			return inspect(target, method, params, ScopesParams::fromJson,
+					(t, p) -> fresh(t, p.getFrame()),
+					(t, p) -> backend.scopes(t, p));
+		case Loupe.LOCALS:
+			return inspect(target, method, params, LocalsParams::fromJson,
+					(t, p) -> {
+						fresh(t, p.getFrame());
+						page(p.getStart(), p.getCount(), p::setStart);
+					},
+					(t, p) -> backend.locals(t, p));
+		case Loupe.CHILDREN:
+			return inspect(target, method, params, ChildrenParams::fromJson,
+					(t, p) -> {
+						fresh(t, p.getId());
+						page(p.getStart(), p.getCount(), p::setStart);
+					},
+					(t, p) -> backend.children(t, p));
+		case Loupe.OBJECT_CHANGES:
+			return objectChanges(target, params);
 		default:
 			LoupeEndpoint.Handler f = fallback;
 			if( f == null ) {
@@ -343,6 +381,99 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 				}
 			}
 			return new LinkedHashMap<String,Object>();
+		});
+	}
+
+	// ---- the stack and values
+
+	/** Checks a request's params; may throw LoupeException. */
+	private interface Check<P> {
+		void check(Target target, P params);
+	}
+
+	/**
+	 * A request about the stopped target: the method must be supported, the params parse,
+	 * the target be paused, and the ids in them be current.
+	 */
+	private <P, R extends JsonValue> CompletableFuture<Object> inspect(String target, String method, Object params,
+			JsonValues.Reader<P> reader, Check<P> check, BiFunction<Target,P,CompletableFuture<R>> call) {
+		Target t = controllable(target, method);
+		P p;
+		try {
+			p = reader.read(params, method);
+		} catch (JsonException e) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, e.getMessage());
+		}
+		if( p == null ) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, method+" needs params");
+		}
+		t.require(TargetState.PAUSED);
+		check.check(t, p);
+		CompletableFuture<R> f = call.apply(t, p);
+		if( f == null ) {
+			throw new LoupeException(LoupeException.FAILED, "The adapter has no answer for "+method);
+		}
+		return f.thenApply(r -> r == null ? null : (Object) r.toJson());
+	}
+
+	/** An id with a generation must be of the target's current one. */
+	private static void fresh(Target t, String id) {
+		ObjectId oid;
+		try {
+			oid = ObjectId.parse(id);
+		} catch (JsonException e) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, e.getMessage());
+		}
+		int now = t.getGeneration();
+		if( oid.hasGeneration() && oid.getGeneration() != now ) {
+			Map<String,Object> data = new LinkedHashMap<>();
+			data.put("id", id);
+			data.put("generation", now);
+			throw new LoupeException(LoupeException.STALE_ID, id+" is from generation "+oid.getGeneration()+", the target is at "+now, data);
+		}
+	}
+
+	/** start defaults to 0; neither may be negative. */
+	private static void page(Integer start, Integer count, java.util.function.Consumer<Integer> setStart) {
+		if( start != null && start < 0 || count != null && count < 0 ) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, "start and count can't be negative");
+		}
+		if( start == null ) {
+			setStart.accept(0);
+		}
+	}
+
+	private CompletableFuture<Object> threads(String target) {
+		Target t = controllable(target, Loupe.THREADS);
+		t.require(TargetState.RUNNING, TargetState.PAUSED);
+		CompletableFuture<List<ThreadInfo>> f = backend.threads(t);
+		return f.thenApply(list -> new ThreadsResult().setThreads(list).toJson());
+	}
+
+	private CompletableFuture<Object> objectChanges(String target, Object params) {
+		Target t = controllable(target, Loupe.OBJECT_CHANGES);
+		if( !registry.hasFeature(Loupe.FEATURE_OBJECT_CHANGES)) {
+			throw new LoupeException(LoupeException.NOT_SUPPORTED, "objectChanges wasn't negotiated");
+		}
+		ObjectChangesParams p;
+		try {
+			p = ObjectChangesParams.fromJson(params);
+		} catch (JsonException e) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, e.getMessage());
+		}
+		if( p == null ) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, "objectChanges needs params");
+		}
+		t.require(TargetState.PAUSED);
+		int now = t.getGeneration();
+		if( p.getSince() < 0 || p.getSince() > now ) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, "since must be from 0 to "+now);
+		}
+		return backend.objectChanges(t, p).thenApply(r -> {
+			if( r.getGeneration() == null ) {
+				r.setGeneration(now);
+			}
+			return r.toJson();
 		});
 	}
 }

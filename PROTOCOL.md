@@ -122,6 +122,28 @@ a new generation) and the request fails.
 `frames` holds the top `snapshotFrames` frames (default 20; `snapshotLimits` on `launch`),
 `locals` those of the first frame. More are fetched with `frames`, `locals`, `scopes`.
 
+## 5a. Stack and value requests
+
+Asked while the target is `paused` (`threads` also while `running`); in any other state they
+fail with `wrongState`. An adapter that doesn't implement one fails it with `notSupported`.
+
+| Request | Params | Result |
+|---|---|---|
+| `threads` | | `{threads:[{id,name,state}]}` |
+| `frames` | `{thread?, start?, count?}` | `{frames:[Frame], total?}`, top frame first |
+| `scopes` | `{frame}` | `{scopes:[{name, id, expensive?}]}` |
+| `locals` | `{frame, start?, count?}` | `{variables:[{name, value}], total?}` |
+| `children` | `{id, start?, count?}` | `{variables:[{name, value}], total?}`: the elements, entries or fields of an array, map or object, or the variables of a scope |
+| `objectChanges` | `{since}` | `{generation, changed:[name], gone:[name]}`; needs the `objectChanges` feature, and `since` from 0 to the current generation |
+
+`start` counts from 0 and defaults to 0; `count` left out means as many as the adapter will
+give, and `total` says how many there are if it knows. Negative values are `invalidParams`.
+
+An id with a generation (`f0@12`, `o1@12`) must be of the target's current one; an id of an
+earlier pause fails with `staleId` and `data {id, generation}` giving the current
+generation. An id without a generation (`o1`) names the object in whichever generation the
+target is in.
+
 ## 6. Values and object ids
 
 Values are typed, never display strings:

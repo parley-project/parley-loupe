@@ -45,6 +45,12 @@ public final class Loupe {
 	public static final String STEP = "step";
 	public static final String PAUSE = "pause";
 	public static final String TERMINATE = "terminate";
+	public static final String THREADS = "threads";
+	public static final String FRAMES = "frames";
+	public static final String SCOPES = "scopes";
+	public static final String LOCALS = "locals";
+	public static final String CHILDREN = "children";
+	public static final String OBJECT_CHANGES = "objectChanges";
 
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";
