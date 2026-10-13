@@ -61,6 +61,8 @@ import us.bringardner.parley.loupe.protocol.ObjectChangesResult;
 import us.bringardner.parley.loupe.protocol.Scope;
 import us.bringardner.parley.loupe.protocol.ScopesParams;
 import us.bringardner.parley.loupe.protocol.ScopesResult;
+import us.bringardner.parley.loupe.protocol.SetVariableParams;
+import us.bringardner.parley.loupe.protocol.SetVariableResult;
 import us.bringardner.parley.loupe.protocol.ThreadInfo;
 import us.bringardner.parley.loupe.protocol.Value;
 import us.bringardner.parley.loupe.protocol.Variable;
@@ -71,7 +73,7 @@ public class TestInspection {
 	/** A stack of five frames, and an array o1 of five numbers. */
 	static class Backend implements TargetBackend {
 		volatile Set<String> supported = Set.of(Loupe.RESUME, Loupe.PAUSE, Loupe.THREADS, Loupe.FRAMES, Loupe.SCOPES,
-				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS);
+				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE);
 		final List<String> seen = new ArrayList<>();
 
 		@Override
@@ -138,6 +140,15 @@ public class TestInspection {
 			int from = Math.min(p.getStart(), all.size());
 			int to = p.getCount() == null ? all.size() : Math.min(all.size(), from+p.getCount());
 			return CompletableFuture.completedFuture(new VariablesResult().setVariables(all.subList(from, to)).setTotal(5));
+		}
+
+		@Override
+		public CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams p) {
+			seen.add("set "+p.getId()+" "+p.getName()+" = "+p.getValue());
+			if( p.getName().equals("const")) {
+				throw new LoupeException(LoupeException.FAILED, "const can't be changed");
+			}
+			return CompletableFuture.completedFuture(new SetVariableResult().setValue(Value.of(Long.parseLong(p.getValue()))));
 		}
 
 		@Override
@@ -324,6 +335,18 @@ public class TestInspection {
 		assertEquals(LoupeException.STALE_ID, fails("evaluate", "t1", map("expression", "n", "frame", "f0@1")).getCode());
 		call("resume", "t1", null);
 		assertEquals(LoupeException.WRONG_STATE, fails("evaluate", "t1", map("expression", "n")).getCode());
+	}
+
+	@Test
+	public void setVariable() throws Exception {
+		Object r = call("setVariable", "t1", map("id", "s0@1", "name", "n", "value", "5"));
+		assertEquals("{\"value\":{\"t\":\"number\",\"v\":5,\"kind\":\"int\"}}", Json.write(r));
+		assertEquals("set s0@1 n = 5", backend.seen.get(backend.seen.size()-1));
+		assertEquals("const can't be changed", fails("setVariable", "t1", map("id", "s0", "name", "const", "value", "1")).getMessage());
+		assertEquals(LoupeException.INVALID_PARAMS, fails("setVariable", "t1", map("id", "s0", "name", "n")).getCode());
+		call("resume", "t1", null);
+		call("pause", "t1", null);
+		assertEquals(LoupeException.STALE_ID, fails("setVariable", "t1", map("id", "s0@1", "name", "n", "value", "1")).getCode());
 	}
 
 	@Test

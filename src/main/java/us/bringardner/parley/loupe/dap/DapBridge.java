@@ -71,6 +71,8 @@ import us.bringardner.parley.dap.protocol.SetBreakpointsArguments;
 import us.bringardner.parley.dap.protocol.SetBreakpointsResponseBody;
 import us.bringardner.parley.dap.protocol.Source;
 import us.bringardner.parley.dap.protocol.SourceBreakpoint;
+import us.bringardner.parley.dap.protocol.SetVariableArguments;
+import us.bringardner.parley.dap.protocol.SetVariableResponseBody;
 import us.bringardner.parley.dap.protocol.StackFrame;
 import us.bringardner.parley.dap.protocol.StackTraceArguments;
 import us.bringardner.parley.dap.protocol.StackTraceResponseBody;
@@ -107,6 +109,8 @@ import us.bringardner.parley.loupe.protocol.PeerInfo;
 import us.bringardner.parley.loupe.protocol.RemoveBreakpointParams;
 import us.bringardner.parley.loupe.protocol.ScopesParams;
 import us.bringardner.parley.loupe.protocol.ScopesResult;
+import us.bringardner.parley.loupe.protocol.SetVariableParams;
+import us.bringardner.parley.loupe.protocol.SetVariableResult;
 import us.bringardner.parley.loupe.protocol.Snapshot;
 import us.bringardner.parley.loupe.protocol.StepKind;
 import us.bringardner.parley.loupe.protocol.StepParams;
@@ -146,6 +150,9 @@ import us.bringardner.parley.loupe.protocol.VariablesResult;
  * <p>
  * <b>Not mapped:</b> function, data and exception breakpoints, exceptions, modules, memory:
  * they answer notSupported.
+ * <p>
+ * {@code setVariable} works on the variables the client was given by a scope or a variable:
+ * the reference names the Loupe container.
  * <p>
  * Use {@link #open} to connect a pair of DAP streams to a pair of Loupe streams.
  */
@@ -481,7 +488,8 @@ public final class DapBridge implements IDebugAdapter {
 					.setSupportsLogPoints(true)
 					.setSupportsTerminateRequest(methods.contains(Loupe.TERMINATE))
 					.setSupportsEvaluateForHovers(methods.contains(Loupe.EVALUATE))
-					.setSupportsCompletionsRequest(methods.contains(Loupe.COMPLETIONS));
+					.setSupportsCompletionsRequest(methods.contains(Loupe.COMPLETIONS))
+					.setSupportsSetVariable(methods.contains(Loupe.SET_VARIABLE));
 		});
 	}
 
@@ -917,6 +925,24 @@ public final class DapBridge implements IDebugAdapter {
 			d.setVariablesReference(0);
 		}
 		return d;
+	}
+
+	@Override
+	public CompletableFuture<SetVariableResponseBody> setVariable(SetVariableArguments args) {
+		Ref ref;
+		synchronized (this) {
+			ref = refs.get(args.getVariablesReference());
+		}
+		if( ref == null ) {
+			return failed("Unknown variablesReference "+args.getVariablesReference());
+		}
+		SetVariableParams p = new SetVariableParams().setId(ref.id).setName(args.getName()).setValue(args.getValue());
+		return ask(Loupe.SET_VARIABLE, p, SetVariableResult::fromJson).thenApply(r -> {
+			Variable v = toVariable(args.getName(), r.getValue());
+			return new SetVariableResponseBody().setValue(v.getValue()).setType(v.getType())
+					.setVariablesReference(v.getVariablesReference()).setNamedVariables(v.getNamedVariables())
+					.setIndexedVariables(v.getIndexedVariables());
+		});
 	}
 
 	// ---- evaluate and completions

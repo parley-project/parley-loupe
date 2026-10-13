@@ -68,6 +68,7 @@ import us.bringardner.parley.dap.protocol.Scope;
 import us.bringardner.parley.dap.protocol.ScopesArguments;
 import us.bringardner.parley.dap.protocol.SetBreakpointsArguments;
 import us.bringardner.parley.dap.protocol.SetBreakpointsResponseBody;
+import us.bringardner.parley.dap.protocol.SetVariableArguments;
 import us.bringardner.parley.dap.protocol.StackFrame;
 import us.bringardner.parley.dap.protocol.StackTraceArguments;
 import us.bringardner.parley.dap.protocol.StoppedEventBody;
@@ -92,6 +93,8 @@ import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
 import us.bringardner.parley.loupe.protocol.Loupe;
 import us.bringardner.parley.loupe.protocol.ScopesParams;
+import us.bringardner.parley.loupe.protocol.SetVariableParams;
+import us.bringardner.parley.loupe.protocol.SetVariableResult;
 import us.bringardner.parley.loupe.protocol.ScopesResult;
 import us.bringardner.parley.loupe.protocol.Snapshot;
 import us.bringardner.parley.loupe.protocol.StepParams;
@@ -109,7 +112,7 @@ public class TestDapBridge {
 		@Override
 		public boolean supports(String method) {
 			return Set.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
-					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.EVALUATE, Loupe.COMPLETIONS).contains(method);
+					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE).contains(method);
 		}
 
 		/** The stop all the stack requests answer from. */
@@ -189,6 +192,12 @@ public class TestDapBridge {
 			return CompletableFuture.completedFuture(new ScopesResult().setScopes(List.of(
 					new us.bringardner.parley.loupe.protocol.Scope().setName("locals").setId(target.objectId("s0")),
 					new us.bringardner.parley.loupe.protocol.Scope().setName("globals").setId(target.objectId("s1")).setExpensive(true))));
+		}
+
+		@Override
+		public CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams p) {
+			calls.add("set "+p.getId()+" "+p.getName()+" = "+p.getValue());
+			return CompletableFuture.completedFuture(new SetVariableResult().setValue(Value.of(Long.parseLong(p.getValue()))));
 		}
 
 		@Override
@@ -318,6 +327,7 @@ public class TestDapBridge {
 		assertTrue(caps.getSupportsTerminateRequest());
 		assertTrue(caps.getSupportsEvaluateForHovers());
 		assertTrue(caps.getSupportsCompletionsRequest());
+		assertTrue(caps.getSupportsSetVariable());
 		get(adapter.launch(LaunchRequestArguments.fromJson(Json.parse(json))));
 		assertEquals("initialized", event());
 	}
@@ -483,6 +493,25 @@ public class TestDapBridge {
 		assertTrue(e.getCause().getMessage().contains("Unknown variablesReference"), e.getCause().getMessage());
 		assertTrue(e.getCause() instanceof us.bringardner.parley.dap.DapException);
 		assertTrue(LoupeException.class != null);
+	}
+
+	@Test
+	public void setVariable() throws Exception {
+		launch("{\"script\":\"a.fsh\"}");
+		get(adapter.configurationDone(new ConfigurationDoneArguments()));
+		Target t = handler.getTargets().get("t1");
+		t.pausedWith("breakpoint", () -> Backend.snapshot(t), null);
+		assertEquals("stopped breakpoint thread=1 hit=null", event());
+		StackFrame frame = get(adapter.stackTrace(StackTraceArguments.fromJson(Json.parse("{\"threadId\":1}")))).getStackFrames().get(0);
+		int locals = get(adapter.scopes(new ScopesArguments().setFrameId(frame.getId()))).getScopes().get(0).getVariablesReference();
+
+		var r = get(adapter.setVariable(new SetVariableArguments().setVariablesReference(locals).setName("n").setValue("9")));
+		assertEquals("9", r.getValue());
+		assertEquals("number", r.getType());
+		assertEquals("set "+t.objectId("s0")+" n = 9", backend.calls.get(backend.calls.size()-1));
+		ExecutionException e = assertThrows(ExecutionException.class,
+				()->get(adapter.setVariable(new SetVariableArguments().setVariablesReference(12345).setName("n").setValue("1"))));
+		assertTrue(e.getCause().getMessage().contains("Unknown variablesReference"));
 	}
 
 	@Test

@@ -53,6 +53,7 @@ public final class Loupe {
 	public static final String OBJECT_CHANGES = "objectChanges";
 	public static final String EVALUATE = "evaluate";
 	public static final String COMPLETIONS = "completions";
+	public static final String SET_VARIABLE = "setVariable";
 
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";

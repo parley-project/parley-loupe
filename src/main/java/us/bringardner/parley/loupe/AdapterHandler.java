@@ -45,6 +45,7 @@ import us.bringardner.parley.loupe.protocol.LocalsParams;
 import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
 import us.bringardner.parley.loupe.protocol.ObjectId;
 import us.bringardner.parley.loupe.protocol.ScopesParams;
+import us.bringardner.parley.loupe.protocol.SetVariableParams;
 import us.bringardner.parley.loupe.protocol.ThreadInfo;
 import us.bringardner.parley.loupe.protocol.ThreadsResult;
 import us.bringardner.parley.loupe.protocol.Hello;
@@ -190,6 +191,10 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 						}
 					},
 					(t, p) -> backend.evaluate(t, p));
+		case Loupe.SET_VARIABLE:
+			return inspect(target, method, params, SetVariableParams::fromJson,
+					(t, p) -> fresh(t, p.getId()),
+					(t, p) -> backend.setVariable(t, p));
 		case Loupe.COMPLETIONS:
 			return inspect(target, method, params, CompletionsParams::fromJson,
 					(t, p) -> {
@@ -250,7 +255,7 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			ret.add(Loupe.ATTACH);
 		}
 		for(String m : List.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
-				Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS)) {
+				Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE)) {
 			if( backend.supports(m)) {
 				ret.add(m);
 			}

@@ -38,6 +38,8 @@ import us.bringardner.parley.loupe.protocol.LocalsParams;
 import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
 import us.bringardner.parley.loupe.protocol.ObjectChangesResult;
 import us.bringardner.parley.loupe.protocol.ScopesParams;
+import us.bringardner.parley.loupe.protocol.SetVariableParams;
+import us.bringardner.parley.loupe.protocol.SetVariableResult;
 import us.bringardner.parley.loupe.protocol.ScopesResult;
 import us.bringardner.parley.loupe.protocol.StepParams;
 import us.bringardner.parley.loupe.protocol.ThreadInfo;
@@ -85,7 +87,7 @@ public interface TargetBackend {
 
 	/**
 	 * Which of the methods resume, step, pause, terminate, threads, frames, scopes, locals,
-	 * children, objectChanges, evaluate and completions (names in
+	 * children, objectChanges, evaluate, completions and setVariable (names in
 	 * {@link us.bringardner.parley.loupe.protocol.Loupe}) the backend implements. The others
 	 * are refused with notSupported before the target's state is touched.
 	 */
@@ -181,6 +183,15 @@ public interface TargetBackend {
 	 * In the {@code hover} context it must not change the program's state.
 	 */
 	default CompletableFuture<EvaluateResult> evaluate(Target target, EvaluateParams params) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * Sets a variable of an object, map, array or scope to the value of an expression. The id
+	 * is current. An error in the expression, or a variable that can't be set, fails the future
+	 * with a LoupeException {@code failed} and the message for the user.
+	 */
+	default CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams params) {
 		return notSupportedResult();
 	}
 
