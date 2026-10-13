@@ -41,6 +41,10 @@ public final class Loupe {
 	public static final String CANCEL = "cancel";
 	public static final String ADD_BREAKPOINT = "addBreakpoint";
 	public static final String REMOVE_BREAKPOINT = "removeBreakpoint";
+	public static final String RESUME = "resume";
+	public static final String STEP = "step";
+	public static final String PAUSE = "pause";
+	public static final String TERMINATE = "terminate";
 
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";

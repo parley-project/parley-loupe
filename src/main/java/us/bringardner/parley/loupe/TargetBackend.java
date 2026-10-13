@@ -26,6 +26,8 @@ package us.bringardner.parley.loupe;
 
 import java.util.concurrent.CompletableFuture;
 
+import us.bringardner.parley.loupe.protocol.StepParams;
+
 /**
  * What an adapter does for the targets: start (or attach to) a debuggee, and install and
  * remove its breakpoints. {@link AdapterHandler} calls it after checking the request.
@@ -61,5 +63,56 @@ public interface TargetBackend {
 
 	/** A breakpoint was removed. */
 	default void breakpointRemoved(Target target, String id) {
+	}
+
+	/**
+	 * Which of the methods resume, step, pause and terminate (names in
+	 * {@link us.bringardner.parley.loupe.protocol.Loupe}) the backend implements. The others
+	 * are refused with notSupported before the target's state is touched.
+	 */
+	default boolean supports(String method) {
+		return false;
+	}
+
+	/**
+	 * Lets the paused target run. The target is already running when this is called; when the
+	 * debuggee stops again the backend calls {@link Target#paused}, which throws wrongState
+	 * if the target isn't running (a stop that raced with something else). If the future
+	 * fails, the target goes back to paused (reason resumeFailed) and the request fails.
+	 */
+	default CompletableFuture<Void> resume(Target target) {
+		return notSupported();
+	}
+
+	/**
+	 * Runs the paused target for one step of params.getKind(); like resume (reason of the
+	 * failure stepFailed). The backend calls {@link Target#paused} with reason "step" when
+	 * the step is done. A thread it doesn't know is an invalidParams failure.
+	 */
+	default CompletableFuture<Void> step(Target target, StepParams params) {
+		return notSupported();
+	}
+
+	/**
+	 * Asks the running target to stop. The future completes when the request is accepted; the
+	 * stop itself is the backend's call to {@link Target#paused} (reason "pause").
+	 */
+	default CompletableFuture<Void> pause(Target target) {
+		return notSupported();
+	}
+
+	/**
+	 * Ends the debuggee. The future completes when it is ending; if the target hasn't been
+	 * terminated by then (through {@link Target#terminated}, which may give an exit code), the
+	 * handler terminates it with reason "kill".
+	 */
+	default CompletableFuture<Void> terminate(Target target) {
+		return notSupported();
+	}
+
+	private static CompletableFuture<Void> notSupported() {
+		CompletableFuture<Void> f = new CompletableFuture<>();
+		f.completeExceptionally(new LoupeException(LoupeException.NOT_SUPPORTED, "Not supported by this adapter"));
+		return f;
 	}
 }

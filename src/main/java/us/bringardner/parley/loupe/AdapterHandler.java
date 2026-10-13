@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
 
 import us.bringardner.parley.dap.json.JsonException;
 import us.bringardner.parley.loupe.protocol.AddBreakpointParams;
@@ -38,6 +39,9 @@ import us.bringardner.parley.loupe.protocol.LaunchParams;
 import us.bringardner.parley.loupe.protocol.Loupe;
 import us.bringardner.parley.loupe.protocol.PeerInfo;
 import us.bringardner.parley.loupe.protocol.RemoveBreakpointParams;
+import us.bringardner.parley.loupe.protocol.StepKind;
+import us.bringardner.parley.loupe.protocol.StepParams;
+import us.bringardner.parley.loupe.protocol.TargetState;
 import us.bringardner.parley.loupe.protocol.Welcome;
 
 /**
@@ -49,7 +53,8 @@ import us.bringardner.parley.loupe.protocol.Welcome;
  *         .setAdapter(new PeerInfo().setName("fsh").setVersion("1"))
  *         .setLaunchSchema(schema), in, out);
  * </pre>
- * Nothing but hello is accepted before hello. A launch or attach makes the target and puts
+ * It also answers resume, step, pause and terminate for the methods the backend says it
+ * {@link TargetBackend#supports supports}. Nothing but hello is accepted before hello. A launch or attach makes the target and puts
  * it in {@code running} (event {@code targetState}) before the backend starts it; if the
  * backend fails, the target is terminated and the request fails.
  */
@@ -126,6 +131,14 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			return completed(addBreakpoint(target, params));
 		case Loupe.REMOVE_BREAKPOINT:
 			return completed(removeBreakpoint(target, params));
+		case Loupe.RESUME:
+			return resume(target);
+		case Loupe.STEP:
+			return step(target, params);
+		case Loupe.PAUSE:
+			return pause(target);
+		case Loupe.TERMINATE:
+			return terminate(target);
 		default:
 			LoupeEndpoint.Handler f = fallback;
 			if( f == null ) {
@@ -244,5 +257,92 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 		t.send(t.getBreakpoints().remove(p.getId()));
 		backend.breakpointRemoved(t, p.getId());
 		return new LinkedHashMap<String,Object>();
+	}
+
+	// ---- execution control
+
+	private Target controllable(String target, String method) {
+		Target t = registry.get(target);
+		if( !backend.supports(method)) {
+			throw new LoupeException(LoupeException.NOT_SUPPORTED, "This adapter doesn't "+method);
+		}
+		return t;
+	}
+
+	private static CompletableFuture<Object> done(CompletableFuture<Void> f, java.util.function.Consumer<Throwable> onError) {
+		return f.handle((v, e) -> {
+			if( e != null ) {
+				onError.accept(e);
+				throw e instanceof CompletionException ? (CompletionException) e : new CompletionException(e);
+			}
+			return new LinkedHashMap<String,Object>();
+		});
+	}
+
+	private static CompletableFuture<Void> call(Supplier<CompletableFuture<Void>> action) {
+		try {
+			CompletableFuture<Void> f = action.get();
+			return f == null ? CompletableFuture.completedFuture(null) : f;
+		} catch (RuntimeException e) {
+			CompletableFuture<Void> f = new CompletableFuture<>();
+			f.completeExceptionally(e);
+			return f;
+		}
+	}
+
+	/** The target leaves a stop: running first (the backend may stop it again at once), back to paused if starting fails. */
+	private CompletableFuture<Object> leaveStop(Target t, String reason, Supplier<CompletableFuture<Void>> action) {
+		t.running(reason);
+		return done(call(action), e -> {
+			synchronized (t) {
+				if( TargetState.RUNNING.equals(t.getState())) {
+					t.paused(reason+"Failed", null, null);
+				}
+			}
+		});
+	}
+
+	private CompletableFuture<Object> resume(String target) {
+		Target t = controllable(target, Loupe.RESUME);
+		t.require(TargetState.PAUSED);
+		return leaveStop(t, "resume", () -> backend.resume(t));
+	}
+
+	private CompletableFuture<Object> step(String target, Object params) {
+		Target t = controllable(target, Loupe.STEP);
+		StepParams p;
+		try {
+			p = StepParams.fromJson(params);
+		} catch (JsonException e) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, e.getMessage());
+		}
+		if( p == null || !StepKind.isValid(p.getKind())) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, "kind must be over, in or out");
+		}
+		t.require(TargetState.PAUSED);
+		return leaveStop(t, "step", () -> backend.step(t, p));
+	}
+
+	private CompletableFuture<Object> pause(String target) {
+		Target t = controllable(target, Loupe.PAUSE);
+		t.require(TargetState.RUNNING);
+		return done(call(() -> backend.pause(t)), e -> {
+		});
+	}
+
+	private CompletableFuture<Object> terminate(String target) {
+		Target t = controllable(target, Loupe.TERMINATE);
+		t.require(TargetState.RUNNING, TargetState.PAUSED);
+		return call(() -> backend.terminate(t)).handle((v, e) -> {
+			if( e != null ) {
+				throw e instanceof CompletionException ? (CompletionException) e : new CompletionException(e);
+			}
+			synchronized (t) {
+				if( !t.isTerminated()) {
+					t.terminated("kill", null);
+				}
+			}
+			return new LinkedHashMap<String,Object>();
+		});
 	}
 }

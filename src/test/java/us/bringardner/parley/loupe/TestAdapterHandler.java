@@ -282,7 +282,7 @@ public class TestAdapterHandler {
 	@Test
 	public void otherMethodsGoToTheFallback() throws Exception {
 		hello();
-		assertEquals(LoupeException.UNKNOWN_METHOD, fails("resume", "t1", null).getCode());
+		assertEquals(LoupeException.UNKNOWN_METHOD, fails("customThing", "t1", null).getCode());
 		handler.setFallback(new LoupeEndpoint.Handler() {
 			@Override
 			public CompletableFuture<Object> request(String method, String target, Object params) {
@@ -293,6 +293,6 @@ public class TestAdapterHandler {
 			public void event(String event, String target, Object params) {
 			}
 		});
-		assertEquals(Map.of("method", "resume"), call("resume", "t1", null));
+		assertEquals(Map.of("method", "customThing"), call("customThing", "t1", null));
 	}
 }

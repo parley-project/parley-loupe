@@ -88,6 +88,22 @@ Every change is announced with `targetState` (`state`, `from`, `reason`). A requ
 needs another state fails with `wrongState` and `data.state`. `terminated` is final; the id
 may not be reused in the session.
 
+### Execution control
+
+| Request | Needs | Effect |
+|---|---|---|
+| `resume` | paused | the target runs: `targetState` running (reason `resume`) |
+| `step {kind, thread?}` | paused | `kind` is `over`, `in` or `out`; the target runs (reason `step`) and pauses again when the step is done, reason `step` |
+| `pause` | running | asks the target to stop; it does so with `targetState` paused (reason `pause`) |
+| `terminate` | running or paused | ends the debuggee: `targetState` terminated (reason `kill`, or the adapter's own with an `exitCode`) |
+
+A request in the wrong state fails with `wrongState` and `data.state`; one the adapter
+doesn't implement fails with `notSupported` and changes nothing. The response comes when
+the adapter has accepted the request, not when the target stops again: the stop is the
+event. If the adapter can't start a `resume` or `step` after the target was announced as
+running, the target is announced as paused again (reason `resumeFailed` or `stepFailed`,
+a new generation) and the request fails.
+
 ## 5. Stop snapshot
 
 `targetState` to `paused` carries what the IDE shows next, so it need not ask:
