@@ -38,6 +38,8 @@ import us.bringardner.parley.dap.json.JsonValues;
 import us.bringardner.parley.loupe.protocol.AddBreakpointParams;
 import us.bringardner.parley.loupe.protocol.BreakpointResult;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.CompletionsParams;
+import us.bringardner.parley.loupe.protocol.EvaluateParams;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.LocalsParams;
 import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
@@ -177,6 +179,28 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 					(t, p) -> backend.children(t, p));
 		case Loupe.OBJECT_CHANGES:
 			return objectChanges(target, params);
+		case Loupe.EVALUATE:
+			return inspect(target, method, params, EvaluateParams::fromJson,
+					(t, p) -> {
+						if( p.getExpression().isBlank()) {
+							throw new LoupeException(LoupeException.INVALID_PARAMS, "The expression is empty");
+						}
+						if( p.getFrame() != null ) {
+							fresh(t, p.getFrame());
+						}
+					},
+					(t, p) -> backend.evaluate(t, p));
+		case Loupe.COMPLETIONS:
+			return inspect(target, method, params, CompletionsParams::fromJson,
+					(t, p) -> {
+						if( p.getOffset() < 0 || p.getOffset() > p.getText().length()) {
+							throw new LoupeException(LoupeException.INVALID_PARAMS, "offset must be from 0 to "+p.getText().length());
+						}
+						if( p.getFrame() != null ) {
+							fresh(t, p.getFrame());
+						}
+					},
+					(t, p) -> backend.completions(t, p));
 		default:
 			LoupeEndpoint.Handler f = fallback;
 			if( f == null ) {
@@ -213,9 +237,25 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 		}
 		Welcome w = Handshake.accept(hello, protocols, features, adapter, launchSchema);
 		w.setAttachSchema(attachSchema);
+		w.setMethods(methods());
 		registry.setFeatures(w.getFeatures());
 		welcomed = true;
 		return w.toJson();
+	}
+
+	/** The methods this adapter answers: the ones that are always there, and what the backend supports. */
+	private List<String> methods() {
+		List<String> ret = new java.util.ArrayList<>(List.of(Loupe.LAUNCH, Loupe.ADD_BREAKPOINT, Loupe.REMOVE_BREAKPOINT, Loupe.CANCEL));
+		if( attachSchema != null ) {
+			ret.add(Loupe.ATTACH);
+		}
+		for(String m : List.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
+				Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS)) {
+			if( backend.supports(m)) {
+				ret.add(m);
+			}
+		}
+		return ret;
 	}
 
 	private CompletableFuture<Object> start(Object params, boolean attach) {

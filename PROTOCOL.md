@@ -42,11 +42,14 @@ event     {"event":"paused", "target":"t1", "params":{...}}
      "adapter":{"name":"fsh","version":"1.0"},
      "features":["snapshot","objectChanges"],
      "launchSchema":{ ...JSON Schema... },
-     "attachSchema":{ ...JSON Schema... }}}
+     "attachSchema":{ ...JSON Schema... },
+     "methods":["launch","addBreakpoint","removeBreakpoint","cancel","resume","evaluate"]}}
 ```
 
 - The adapter picks the newest protocol both ends list, or fails with `notSupported` and
   `data.protocols`.
+- `methods` lists what the adapter implements beyond `hello` (a client offers only these);
+  `features` are for behaviour that changes what messages carry.
 - `features` in the result is the intersection: only those may be used in the session.
   Methods and event fields not tied to a feature are in every `loupe/1`.
 - Nothing but `hello` is accepted before it.
@@ -142,6 +145,8 @@ fail with `wrongState`. An adapter that doesn't implement one fails it with `not
 | `scopes` | `{frame}` | `{scopes:[{name, id, expensive?}]}` |
 | `locals` | `{frame, start?, count?}` | `{variables:[{name, value}], total?}` |
 | `children` | `{id, start?, count?}` | `{variables:[{name, value}], total?}`: the elements, entries or fields of an array, map or object, or the variables of a scope |
+| `evaluate` | `{expression, frame?, context?}` | `{value: Value}`; `context` is `watch`, `repl`, `hover` or `clipboard` (a hover must not change the program); no `frame` means the top frame of the stopped thread; an error in the expression is `failed` with the message for the user |
+| `completions` | `{text, offset, frame?}` | `{items:[{label, text?, detail?, type?, start?, length?}]}`; `offset` counts characters from 0 and is within `text`; `start` and `length` are the part of `text` replaced |
 | `objectChanges` | `{since}` | `{generation, changed:[name], gone:[name]}`; needs the `objectChanges` feature, and `since` from 0 to the current generation |
 
 `start` counts from 0 and defaults to 0; `count` left out means as many as the adapter will
@@ -227,11 +232,15 @@ session is one target, `t1`.
 | `continue`, `next`, `stepIn`, `stepOut`, `pause` | `resume`, `step {kind: over, in, out}`, `pause` |
 | `stackTrace`, `scopes`, `variables` | `frames` (or the snapshot), `scopes`, `children` (or the snapshot's locals) |
 | `threads` | `threads` (or the snapshot) |
+| `evaluate` (watch, repl, hover, clipboard) | `evaluate`; a result with parts gets a `variablesReference` |
+| `completions` | `completions`; DAP's line and column become a character offset into the text |
 | `terminate`, `disconnect` | `terminate` (disconnect only when the bridge launched the target, or `terminateDebuggee`) |
 | frame and `variablesReference` numbers | the bridge's table of Loupe ids, dropped at every state change |
 
-Not mapped: evaluate, completions, function, data and exception breakpoints, modules, memory,
-`setVariable`. `objectChanges` is not used: DAP cannot say "what changed since".
+The capabilities the DAP client is told (terminate, evaluate for hovers, completions) follow
+the welcome's `methods`.
+
+Not mapped: function, data and exception breakpoints, modules, memory, `setVariable`. `objectChanges` is not used: DAP cannot say "what changed since".
 
 ## 10. Decided and open
 

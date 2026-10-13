@@ -28,6 +28,10 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.CompletionsParams;
+import us.bringardner.parley.loupe.protocol.CompletionsResult;
+import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.EvaluateResult;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
 import us.bringardner.parley.loupe.protocol.LocalsParams;
@@ -81,7 +85,7 @@ public interface TargetBackend {
 
 	/**
 	 * Which of the methods resume, step, pause, terminate, threads, frames, scopes, locals,
-	 * children and objectChanges (names in
+	 * children, objectChanges, evaluate and completions (names in
 	 * {@link us.bringardner.parley.loupe.protocol.Loupe}) the backend implements. The others
 	 * are refused with notSupported before the target's state is touched.
 	 */
@@ -167,6 +171,21 @@ public interface TargetBackend {
 	 * generation if the result leaves it out.
 	 */
 	default CompletableFuture<ObjectChangesResult> objectChanges(Target target, ObjectChangesParams params) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * Evaluates an expression in a frame. The expression is not empty and the frame id, if
+	 * there is one, is current. A failure in the expression (a syntax error, an unknown name)
+	 * fails the future with a LoupeException {@code failed} and the message to show the user.
+	 * In the {@code hover} context it must not change the program's state.
+	 */
+	default CompletableFuture<EvaluateResult> evaluate(Target target, EvaluateParams params) {
+		return notSupportedResult();
+	}
+
+	/** Ways to complete text typed in a frame (offset is within the text, from 0 to its length). */
+	default CompletableFuture<CompletionsResult> completions(Target target, CompletionsParams params) {
 		return notSupportedResult();
 	}
 

@@ -180,6 +180,8 @@ public class TestAdapterHandler {
 		assertEquals(LAUNCH_SCHEMA, w.getLaunchSchema());
 		assertNull(w.getAttachSchema());
 		assertEquals("test", w.getAdapter().getName());
+		// the methods that are always there; this backend supports no others, and can't attach
+		assertEquals(List.of("launch", "addBreakpoint", "removeBreakpoint", "cancel"), w.getMethods());
 	}
 
 	@Test

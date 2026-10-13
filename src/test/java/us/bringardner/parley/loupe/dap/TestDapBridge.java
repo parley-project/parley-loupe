@@ -50,7 +50,11 @@ import us.bringardner.parley.dap.DapConnection;
 import us.bringardner.parley.dap.json.Json;
 import us.bringardner.parley.dap.protocol.BreakpointEventBody;
 import us.bringardner.parley.dap.protocol.Capabilities;
+import us.bringardner.parley.dap.protocol.CompletionsArguments;
+import us.bringardner.parley.dap.protocol.CompletionsResponseBody;
 import us.bringardner.parley.dap.protocol.ConfigurationDoneArguments;
+import us.bringardner.parley.dap.protocol.EvaluateArguments;
+import us.bringardner.parley.dap.protocol.EvaluateResponseBody;
 import us.bringardner.parley.dap.protocol.ContinueArguments;
 import us.bringardner.parley.dap.protocol.ContinuedEventBody;
 import us.bringardner.parley.dap.protocol.DisconnectArguments;
@@ -78,6 +82,11 @@ import us.bringardner.parley.loupe.Target;
 import us.bringardner.parley.loupe.TargetBackend;
 import us.bringardner.parley.loupe.protocol.BreakpointStatus;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.CompletionItem;
+import us.bringardner.parley.loupe.protocol.CompletionsParams;
+import us.bringardner.parley.loupe.protocol.CompletionsResult;
+import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.EvaluateResult;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -100,7 +109,7 @@ public class TestDapBridge {
 		@Override
 		public boolean supports(String method) {
 			return Set.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
-					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN).contains(method);
+					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.EVALUATE, Loupe.COMPLETIONS).contains(method);
 		}
 
 		/** The stop all the stack requests answer from. */
@@ -180,6 +189,26 @@ public class TestDapBridge {
 			return CompletableFuture.completedFuture(new ScopesResult().setScopes(List.of(
 					new us.bringardner.parley.loupe.protocol.Scope().setName("locals").setId(target.objectId("s0")),
 					new us.bringardner.parley.loupe.protocol.Scope().setName("globals").setId(target.objectId("s1")).setExpensive(true))));
+		}
+
+		@Override
+		public CompletableFuture<EvaluateResult> evaluate(Target target, EvaluateParams p) {
+			calls.add("evaluate "+p.getExpression()+" "+p.getFrame()+" "+p.getContext());
+			if( p.getExpression().equals("nope")) {
+				throw new LoupeException(LoupeException.FAILED, "nope is not defined");
+			}
+			if( p.getExpression().equals("xs")) {
+				return CompletableFuture.completedFuture(new EvaluateResult().setValue(
+						new Value().setT(Value.ARRAY).setId(target.objectId("o1")).setType("int[]").setSize(5)));
+			}
+			return CompletableFuture.completedFuture(new EvaluateResult().setValue(Value.of(7L)));
+		}
+
+		@Override
+		public CompletableFuture<CompletionsResult> completions(Target target, CompletionsParams p) {
+			calls.add("completions "+Json.write(p.getText())+" "+p.getOffset());
+			return CompletableFuture.completedFuture(new CompletionsResult().setItems(List.of(
+					new CompletionItem().setLabel("size").setText("size()").setType("method").setStart(p.getOffset()-1).setLength(1))));
 		}
 
 		@Override
@@ -285,6 +314,10 @@ public class TestDapBridge {
 		Capabilities caps = get(adapter.initialize(new InitializeRequestArguments().setAdapterID("test")));
 		assertTrue(caps.getSupportsConfigurationDoneRequest());
 		assertTrue(caps.getSupportsConditionalBreakpoints());
+		// what the Loupe adapter has is what the client is told
+		assertTrue(caps.getSupportsTerminateRequest());
+		assertTrue(caps.getSupportsEvaluateForHovers());
+		assertTrue(caps.getSupportsCompletionsRequest());
 		get(adapter.launch(LaunchRequestArguments.fromJson(Json.parse(json))));
 		assertEquals("initialized", event());
 	}
@@ -450,6 +483,49 @@ public class TestDapBridge {
 		assertTrue(e.getCause().getMessage().contains("Unknown variablesReference"), e.getCause().getMessage());
 		assertTrue(e.getCause() instanceof us.bringardner.parley.dap.DapException);
 		assertTrue(LoupeException.class != null);
+	}
+
+	@Test
+	public void evaluateAndCompletions() throws Exception {
+		launch("{\"script\":\"a.fsh\"}");
+		get(adapter.configurationDone(new ConfigurationDoneArguments()));
+		Target t = handler.getTargets().get("t1");
+		t.pausedWith("breakpoint", () -> Backend.snapshot(t), null);
+		assertEquals("stopped breakpoint thread=1 hit=null", event());
+		StackFrame frame = get(adapter.stackTrace(StackTraceArguments.fromJson(Json.parse("{\"threadId\":1}")))).getStackFrames().get(0);
+
+		EvaluateResponseBody r = get(adapter.evaluate(new EvaluateArguments().setExpression("n+4").setFrameId(frame.getId()).setContext("hover")));
+		assertEquals("7", r.getResult());
+		assertEquals("number", r.getType());
+		assertEquals(0, r.getVariablesReference());
+		assertEquals("evaluate n+4 "+t.objectId("f0")+" hover", backend.calls.get(backend.calls.size()-1));
+
+		// a result with parts can be expanded, and the frame may be left out
+		r = get(adapter.evaluate(new EvaluateArguments().setExpression("xs").setContext("repl")));
+		assertEquals("int[][5]", r.getResult());
+		assertTrue(r.getVariablesReference() > 0);
+		assertEquals(5, r.getIndexedVariables());
+		assertEquals("evaluate xs null repl", backend.calls.get(backend.calls.size()-1));
+		assertEquals(5, get(adapter.variables(new VariablesArguments().setVariablesReference(r.getVariablesReference()))).getVariables().size());
+
+		ExecutionException e = assertThrows(ExecutionException.class,
+				()->get(adapter.evaluate(new EvaluateArguments().setExpression("nope").setContext("repl"))));
+		assertEquals("nope is not defined", e.getCause().getMessage());
+		e = assertThrows(ExecutionException.class,
+				()->get(adapter.evaluate(new EvaluateArguments().setExpression("n").setFrameId(9999))));
+		assertTrue(e.getCause().getMessage().contains("Unknown frame"), e.getCause().getMessage());
+
+		// the column is 1-based: after "xs." (3 characters) it is 4
+		CompletionsResponseBody c = get(adapter.completions(new CompletionsArguments().setText("xs.").setColumn(4).setFrameId(frame.getId())));
+		assertEquals("completions \"xs.\" 3", backend.calls.get(backend.calls.size()-1));
+		assertEquals("size", c.getTargets().get(0).getLabel());
+		assertEquals("size()", c.getTargets().get(0).getText());
+		assertEquals("method", c.getTargets().get(0).getType());
+		assertEquals(2, c.getTargets().get(0).getStart());
+
+		// a line of a longer text: the offset counts the lines before it
+		get(adapter.completions(new CompletionsArguments().setText("a = 1\nxs.").setLine(2).setColumn(4)));
+		assertEquals("completions \"a = 1\\nxs.\" 9", backend.calls.get(backend.calls.size()-1));
 	}
 
 	@Test

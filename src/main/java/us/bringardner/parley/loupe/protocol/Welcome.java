@@ -39,6 +39,7 @@ public class Welcome implements JsonValue {
 	private List<String> features;
 	private Object launchSchema;
 	private Object attachSchema;
+	private List<String> methods;
 
 	/** The protocol version chosen. */
 	public String getProtocol() {
@@ -90,6 +91,16 @@ public class Welcome implements JsonValue {
 		return this;
 	}
 
+	/** The methods the adapter implements beyond hello (launch, resume, evaluate ...), so a client knows what to offer. */
+	public List<String> getMethods() {
+		return methods;
+	}
+
+	public Welcome setMethods(List<String> methods) {
+		this.methods = methods;
+		return this;
+	}
+
 	@Override
 	public Object toJson() {
 		Map<String,Object> json = new LinkedHashMap<>();
@@ -98,6 +109,7 @@ public class Welcome implements JsonValue {
 		JsonValues.put(json, "features", features);
 		JsonValues.put(json, "launchSchema", launchSchema);
 		JsonValues.put(json, "attachSchema", attachSchema);
+		JsonValues.put(json, "methods", methods);
 		return json;
 	}
 
@@ -123,6 +135,7 @@ public class Welcome implements JsonValue {
 		}
 		ret.launchSchema = JsonValues.any(m.get("launchSchema"), what+".launchSchema");
 		ret.attachSchema = JsonValues.any(m.get("attachSchema"), what+".attachSchema");
+		ret.methods = JsonValues.list(m.get("methods"), what+".methods", JsonValues::string);
 		return ret;
 	}
 }

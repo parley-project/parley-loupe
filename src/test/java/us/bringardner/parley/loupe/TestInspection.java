@@ -45,6 +45,11 @@ import org.junit.jupiter.api.Test;
 
 import us.bringardner.parley.dap.json.Json;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.CompletionItem;
+import us.bringardner.parley.loupe.protocol.CompletionsParams;
+import us.bringardner.parley.loupe.protocol.CompletionsResult;
+import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.EvaluateResult;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -66,7 +71,7 @@ public class TestInspection {
 	/** A stack of five frames, and an array o1 of five numbers. */
 	static class Backend implements TargetBackend {
 		volatile Set<String> supported = Set.of(Loupe.RESUME, Loupe.PAUSE, Loupe.THREADS, Loupe.FRAMES, Loupe.SCOPES,
-				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES);
+				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS);
 		final List<String> seen = new ArrayList<>();
 
 		@Override
@@ -133,6 +138,22 @@ public class TestInspection {
 			int from = Math.min(p.getStart(), all.size());
 			int to = p.getCount() == null ? all.size() : Math.min(all.size(), from+p.getCount());
 			return CompletableFuture.completedFuture(new VariablesResult().setVariables(all.subList(from, to)).setTotal(5));
+		}
+
+		@Override
+		public CompletableFuture<EvaluateResult> evaluate(Target target, EvaluateParams p) {
+			seen.add("evaluate "+p.getExpression()+" "+p.getFrame()+" "+p.getContext());
+			if( p.getExpression().equals("boom")) {
+				throw new LoupeException(LoupeException.FAILED, "Name 'boom' is not defined");
+			}
+			return CompletableFuture.completedFuture(new EvaluateResult().setValue(Value.of(42L)));
+		}
+
+		@Override
+		public CompletableFuture<CompletionsResult> completions(Target target, CompletionsParams p) {
+			seen.add("completions "+p.getText()+" "+p.getOffset()+" "+p.getFrame());
+			return CompletableFuture.completedFuture(new CompletionsResult().setItems(List.of(
+					new CompletionItem().setLabel("length").setType("property").setStart(p.getOffset()).setLength(0))));
 		}
 
 		@Override
@@ -280,5 +301,38 @@ public class TestInspection {
 		assertEquals(LoupeException.NOT_SUPPORTED, fails("threads", "t1", null).getCode());
 		backend.supported = Set.of(Loupe.FRAMES);
 		assertEquals(LoupeException.UNKNOWN_TARGET, fails("frames", "nope", map()).getCode());
+	}
+
+	@Test
+	public void evaluate() throws Exception {
+		Object r = call("evaluate", "t1", map("expression", "n + 1", "frame", "f0@1", "context", "watch"));
+		assertEquals("{\"value\":{\"t\":\"number\",\"v\":42,\"kind\":\"int\"}}", Json.write(r));
+		assertEquals("evaluate n + 1 f0@1 watch", backend.seen.get(backend.seen.size()-1));
+		// no frame: the adapter picks the top one
+		call("evaluate", "t1", map("expression", "n"));
+		assertEquals("evaluate n null null", backend.seen.get(backend.seen.size()-1));
+
+		assertEquals(LoupeException.INVALID_PARAMS, fails("evaluate", "t1", map("expression", "  ")).getCode());
+		assertEquals(LoupeException.INVALID_PARAMS, fails("evaluate", "t1", map()).getCode());
+		// the user's mistake reaches the user as it is
+		LoupeException e = fails("evaluate", "t1", map("expression", "boom"));
+		assertEquals(LoupeException.FAILED, e.getCode());
+		assertEquals("Name 'boom' is not defined", e.getMessage());
+
+		call("resume", "t1", null);
+		call("pause", "t1", null);
+		assertEquals(LoupeException.STALE_ID, fails("evaluate", "t1", map("expression", "n", "frame", "f0@1")).getCode());
+		call("resume", "t1", null);
+		assertEquals(LoupeException.WRONG_STATE, fails("evaluate", "t1", map("expression", "n")).getCode());
+	}
+
+	@Test
+	public void completions() throws Exception {
+		Object r = call("completions", "t1", map("text", "xs.le", "offset", 5L));
+		assertEquals("{\"items\":[{\"label\":\"length\",\"type\":\"property\",\"start\":5,\"length\":0}]}", Json.write(r));
+		assertEquals("completions xs.le 5 null", backend.seen.get(backend.seen.size()-1));
+		call("completions", "t1", map("text", "", "offset", 0L));
+		assertEquals(LoupeException.INVALID_PARAMS, fails("completions", "t1", map("text", "ab", "offset", 3L)).getCode());
+		assertEquals(LoupeException.INVALID_PARAMS, fails("completions", "t1", map("text", "ab", "offset", -1L)).getCode());
 	}
 }

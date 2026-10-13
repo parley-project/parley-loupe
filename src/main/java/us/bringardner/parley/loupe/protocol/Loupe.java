@@ -51,6 +51,8 @@ public final class Loupe {
 	public static final String LOCALS = "locals";
 	public static final String CHILDREN = "children";
 	public static final String OBJECT_CHANGES = "objectChanges";
+	public static final String EVALUATE = "evaluate";
+	public static final String COMPLETIONS = "completions";
 
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";

@@ -47,11 +47,16 @@ import us.bringardner.parley.dap.protocol.AttachRequestArguments;
 import us.bringardner.parley.dap.protocol.Breakpoint;
 import us.bringardner.parley.dap.protocol.BreakpointEventBody;
 import us.bringardner.parley.dap.protocol.Capabilities;
+import us.bringardner.parley.dap.protocol.CompletionItem;
+import us.bringardner.parley.dap.protocol.CompletionsArguments;
+import us.bringardner.parley.dap.protocol.CompletionsResponseBody;
 import us.bringardner.parley.dap.protocol.ConfigurationDoneArguments;
 import us.bringardner.parley.dap.protocol.ContinueArguments;
 import us.bringardner.parley.dap.protocol.ContinueResponseBody;
 import us.bringardner.parley.dap.protocol.ContinuedEventBody;
 import us.bringardner.parley.dap.protocol.DisconnectArguments;
+import us.bringardner.parley.dap.protocol.EvaluateArguments;
+import us.bringardner.parley.dap.protocol.EvaluateResponseBody;
 import us.bringardner.parley.dap.protocol.ExitedEventBody;
 import us.bringardner.parley.dap.protocol.IDebugAdapter;
 import us.bringardner.parley.dap.protocol.IDebugClient;
@@ -87,6 +92,10 @@ import us.bringardner.parley.loupe.protocol.BreakpointResult;
 import us.bringardner.parley.loupe.protocol.BreakpointStatus;
 import us.bringardner.parley.loupe.protocol.BreakpointStatusEvent;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
+import us.bringardner.parley.loupe.protocol.CompletionsParams;
+import us.bringardner.parley.loupe.protocol.CompletionsResult;
+import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.EvaluateResult;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -132,8 +141,11 @@ import us.bringardner.parley.loupe.protocol.VariablesResult;
  * holds the frames asked for) and the locals of the top frame, so a stop costs the client no
  * requests to Loupe in the usual case.
  * <p>
- * <b>Not mapped:</b> evaluate, completions, watch and function breakpoints, exceptions,
- * modules, memory: they answer notSupported.
+ * <b>Evaluate and completions</b> go to the Loupe methods of the same names; the
+ * capabilities the client is told follow the methods the Loupe adapter says it has.
+ * <p>
+ * <b>Not mapped:</b> function, data and exception breakpoints, exceptions, modules, memory:
+ * they answer notSupported.
  * <p>
  * Use {@link #open} to connect a pair of DAP streams to a pair of Loupe streams.
  */
@@ -212,6 +224,8 @@ public final class DapBridge implements IDebugAdapter {
 	private final Map<String,List<Bp>> breakpoints = new HashMap<>();
 	private final Map<String,Bp> byLoupeId = new HashMap<>();
 	private int nextBreakpoint = 1;
+	private boolean columnsStartAt1 = true;
+	private boolean linesStartAt1 = true;
 
 	/**
 	 * @param client the DAP client, for events
@@ -448,6 +462,10 @@ public final class DapBridge implements IDebugAdapter {
 
 	@Override
 	public CompletableFuture<Capabilities> initialize(InitializeRequestArguments args) {
+		synchronized (this) {
+			columnsStartAt1 = args == null || args.getColumnsStartAt1() == null || args.getColumnsStartAt1();
+			linesStartAt1 = args == null || args.getLinesStartAt1() == null || args.getLinesStartAt1();
+		}
 		Hello hello = new Hello().setProtocols(List.of(Loupe.PROTOCOL))
 				.setClient(new PeerInfo().setName("parley-loupe DAP bridge"))
 				.setFeatures(List.of(Loupe.FEATURE_SNAPSHOT));
@@ -455,12 +473,15 @@ public final class DapBridge implements IDebugAdapter {
 			if( e != null ) {
 				throw new CompletionException(dapError(e));
 			}
+			List<String> methods = w.getMethods() == null ? List.of() : w.getMethods();
 			return new Capabilities()
 					.setSupportsConfigurationDoneRequest(true)
 					.setSupportsConditionalBreakpoints(true)
 					.setSupportsHitConditionalBreakpoints(true)
 					.setSupportsLogPoints(true)
-					.setSupportsTerminateRequest(true);
+					.setSupportsTerminateRequest(methods.contains(Loupe.TERMINATE))
+					.setSupportsEvaluateForHovers(methods.contains(Loupe.EVALUATE))
+					.setSupportsCompletionsRequest(methods.contains(Loupe.COMPLETIONS));
 		});
 	}
 
@@ -877,20 +898,92 @@ public final class DapBridge implements IDebugAdapter {
 	private VariablesResponseBody variables(List<us.bringardner.parley.loupe.protocol.Variable> list) {
 		List<Variable> ret = new ArrayList<>();
 		for(us.bringardner.parley.loupe.protocol.Variable v : list) {
-			us.bringardner.parley.loupe.protocol.Value val = v.getValue();
-			Variable d = new Variable().setName(v.getName()).setValue(ValueText.of(val)).setType(ValueText.type(val));
-			if( ValueText.expandable(val)) {
-				d.setVariablesReference(newRef(val.getId(), null, null));
-				if( us.bringardner.parley.loupe.protocol.Value.ARRAY.equals(val.getT())) {
-					d.setIndexedVariables(val.getSize());
-				} else {
-					d.setNamedVariables(val.getSize());
-				}
-			} else {
-				d.setVariablesReference(0);
-			}
-			ret.add(d);
+			ret.add(toVariable(v.getName(), v.getValue()));
 		}
 		return new VariablesResponseBody().setVariables(ret);
+	}
+
+	/** A value as DAP shows it: its text, type, and a reference if it can be expanded. */
+	private Variable toVariable(String name, us.bringardner.parley.loupe.protocol.Value val) {
+		Variable d = new Variable().setName(name).setValue(ValueText.of(val)).setType(ValueText.type(val));
+		if( ValueText.expandable(val)) {
+			d.setVariablesReference(newRef(val.getId(), null, null));
+			if( us.bringardner.parley.loupe.protocol.Value.ARRAY.equals(val.getT())) {
+				d.setIndexedVariables(val.getSize());
+			} else {
+				d.setNamedVariables(val.getSize());
+			}
+		} else {
+			d.setVariablesReference(0);
+		}
+		return d;
+	}
+
+	// ---- evaluate and completions
+
+	/** The Loupe id of a frame the client names, or null for none; an unknown frame is an error. */
+	private synchronized String frameFor(Integer frameId) {
+		if( frameId == null ) {
+			return null;
+		}
+		String f = frames.get(frameId);
+		if( f == null ) {
+			throw new DapException("Unknown frame "+frameId);
+		}
+		return f;
+	}
+
+	@Override
+	public CompletableFuture<EvaluateResponseBody> evaluate(EvaluateArguments args) {
+		EvaluateParams p;
+		try {
+			p = new EvaluateParams().setExpression(args.getExpression()).setFrame(frameFor(args.getFrameId()))
+					.setContext(args.getContext());
+		} catch (DapException e) {
+			return failed(e.getMessage());
+		}
+		return ask(Loupe.EVALUATE, p, EvaluateResult::fromJson).thenApply(r -> {
+			Variable v = toVariable("", r.getValue());
+			return new EvaluateResponseBody().setResult(v.getValue()).setType(v.getType())
+					.setVariablesReference(v.getVariablesReference()).setNamedVariables(v.getNamedVariables())
+					.setIndexedVariables(v.getIndexedVariables());
+		});
+	}
+
+	@Override
+	public CompletableFuture<CompletionsResponseBody> completions(CompletionsArguments args) {
+		String text = args.getText() == null ? "" : args.getText();
+		int offset;
+		CompletionsParams p;
+		try {
+			synchronized (this) {
+				int columnBase = columnsStartAt1 ? 1 : 0;
+				int lineBase = linesStartAt1 ? 1 : 0;
+				int lineStart = 0;
+				if( args.getLine() != null ) {
+					// a multi-line text: the line is counted in lines of the text
+					int line = args.getLine()-lineBase;
+					for(int i=0; i < line && lineStart >= 0; i++) {
+						int nl = text.indexOf('\n', lineStart);
+						lineStart = nl < 0 ? -1 : nl+1;
+					}
+					if( lineStart < 0 ) {
+						lineStart = text.length();
+					}
+				}
+				offset = Math.max(0, Math.min(text.length(), args.getColumn() == null ? text.length() : lineStart+args.getColumn()-columnBase));
+			}
+			p = new CompletionsParams().setText(text).setOffset(offset).setFrame(frameFor(args.getFrameId()));
+		} catch (DapException e) {
+			return failed(e.getMessage());
+		}
+		return ask(Loupe.COMPLETIONS, p, CompletionsResult::fromJson).thenApply(r -> {
+			List<CompletionItem> items = new ArrayList<>();
+			for(us.bringardner.parley.loupe.protocol.CompletionItem i : r.getItems()) {
+				items.add(new CompletionItem().setLabel(i.getLabel()).setText(i.getText()).setDetail(i.getDetail())
+						.setType(i.getType()).setStart(i.getStart()).setLength(i.getLength()));
+			}
+			return new CompletionsResponseBody().setTargets(items);
+		});
 	}
 }
