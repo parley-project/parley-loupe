@@ -41,7 +41,8 @@ event     {"event":"paused", "target":"t1", "params":{...}}
      "protocol":"loupe/1",
      "adapter":{"name":"fsh","version":"1.0"},
      "features":["snapshot","objectChanges"],
-     "launchSchema":{ ...JSON Schema... }}}
+     "launchSchema":{ ...JSON Schema... },
+     "attachSchema":{ ...JSON Schema... }}}
 ```
 
 - The adapter picks the newest protocol both ends list, or fails with `notSupported` and
@@ -60,7 +61,15 @@ A target is one debuggee (a script, a process, a remote shell). The client creat
 
 `target` is chosen by the client. `args` is validated by the adapter against `launchSchema`;
 failures come back as `invalidParams` with the JSON Pointer of each bad member in
-`data.errors`. `attach` is the same with another schema.
+`data.errors` (the target id is not used up by a request that fails here). `attach` is the
+same, checked against `attachSchema` (absent from the welcome if the adapter can't attach,
+and `attach` then fails with `notSupported`).
+
+The target is `running` (event `targetState`, reason `launch` or `attach`) before the adapter
+starts the debuggee, so it may pause at once, to stop on entry. The response is
+`{"target":"t1","state":"running"}` once the debuggee has started. If starting fails, the
+target goes to `terminated` (reason `launchFailed` or `attachFailed`) and the request fails;
+the id stays used, as for any terminated target.
 
 ```
               launch

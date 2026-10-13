@@ -31,6 +31,7 @@ import java.io.OutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import us.bringardner.parley.dap.DapFraming;
 
@@ -69,6 +70,19 @@ public final class LoupeConnection implements Closeable {
 	/** Starts reading at once. The handler may be null, to be set on the endpoint before the other end sends. */
 	public static LoupeConnection open(LoupeEndpoint.Handler handler, InputStream in, OutputStream out) {
 		LoupeConnection c = new LoupeConnection(handler, in, out);
+		c.reader = new Thread(c::read, "Loupe reader "+count.incrementAndGet());
+		c.reader.setDaemon(true);
+		c.reader.start();
+		return c;
+	}
+
+	/**
+	 * Like {@link #open}, for a handler that needs the endpoint (to send events with): the
+	 * factory is given the endpoint before anything is read.
+	 */
+	public static LoupeConnection serve(Function<LoupeEndpoint,LoupeEndpoint.Handler> factory, InputStream in, OutputStream out) {
+		LoupeConnection c = new LoupeConnection(null, in, out);
+		c.endpoint.setHandler(factory.apply(c.endpoint));
 		c.reader = new Thread(c::read, "Loupe reader "+count.incrementAndGet());
 		c.reader.setDaemon(true);
 		c.reader.start();

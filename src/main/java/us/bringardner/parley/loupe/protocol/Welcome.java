@@ -38,6 +38,7 @@ public class Welcome implements JsonValue {
 	private PeerInfo adapter;
 	private List<String> features;
 	private Object launchSchema;
+	private Object attachSchema;
 
 	/** The protocol version chosen. */
 	public String getProtocol() {
@@ -79,6 +80,16 @@ public class Welcome implements JsonValue {
 		return this;
 	}
 
+	/** A JSON Schema for the args of attach, or null if the adapter can't attach. */
+	public Object getAttachSchema() {
+		return attachSchema;
+	}
+
+	public Welcome setAttachSchema(Object attachSchema) {
+		this.attachSchema = attachSchema;
+		return this;
+	}
+
 	@Override
 	public Object toJson() {
 		Map<String,Object> json = new LinkedHashMap<>();
@@ -86,6 +97,7 @@ public class Welcome implements JsonValue {
 		JsonValues.put(json, "adapter", JsonValues.toJson(adapter));
 		JsonValues.put(json, "features", features);
 		JsonValues.put(json, "launchSchema", launchSchema);
+		JsonValues.put(json, "attachSchema", attachSchema);
 		return json;
 	}
 
@@ -110,6 +122,7 @@ public class Welcome implements JsonValue {
 			throw new JsonException(what+" needs features");
 		}
 		ret.launchSchema = JsonValues.any(m.get("launchSchema"), what+".launchSchema");
+		ret.attachSchema = JsonValues.any(m.get("attachSchema"), what+".attachSchema");
 		return ret;
 	}
 }
