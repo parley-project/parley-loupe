@@ -50,6 +50,9 @@ import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.CompletionsResult;
 import us.bringardner.parley.loupe.protocol.EvaluateParams;
 import us.bringardner.parley.loupe.protocol.EvaluateResult;
+import us.bringardner.parley.loupe.protocol.ExceptionFilter;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoParams;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoResult;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -73,7 +76,7 @@ public class TestInspection {
 	/** A stack of five frames, and an array o1 of five numbers. */
 	static class Backend implements TargetBackend {
 		volatile Set<String> supported = Set.of(Loupe.RESUME, Loupe.PAUSE, Loupe.THREADS, Loupe.FRAMES, Loupe.SCOPES,
-				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE);
+				Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE, Loupe.SET_EXCEPTION_FILTERS, Loupe.EXCEPTION_INFO);
 		final List<String> seen = new ArrayList<>();
 
 		@Override
@@ -143,6 +146,18 @@ public class TestInspection {
 		}
 
 		@Override
+		public CompletableFuture<Void> setExceptionFilters(Target target, List<String> filters) {
+			seen.add("filters "+filters);
+			return CompletableFuture.completedFuture(null);
+		}
+
+		@Override
+		public CompletableFuture<ExceptionInfoResult> exceptionInfo(Target target, ExceptionInfoParams p) {
+			seen.add("exceptionInfo "+p.getThread());
+			return CompletableFuture.completedFuture(new ExceptionInfoResult().setId("RangeError").setDescription("index 9 out of range"));
+		}
+
+		@Override
 		public CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams p) {
 			seen.add("set "+p.getId()+" "+p.getName()+" = "+p.getValue());
 			if( p.getName().equals("const")) {
@@ -186,7 +201,9 @@ public class TestInspection {
 		PipedOutputStream aOut = new PipedOutputStream();
 		PipedInputStream cIn = new PipedInputStream(aOut, 1<<16);
 		adapter = LoupeConnection.serve(ep -> {
-			lastHandler = new AdapterHandler(ep, backend).setFeatures(List.of(Loupe.FEATURE_OBJECT_CHANGES));
+			lastHandler = new AdapterHandler(ep, backend).setFeatures(List.of(Loupe.FEATURE_OBJECT_CHANGES))
+					.setExceptionFilters(List.of(new ExceptionFilter().setId("all").setLabel("All exceptions"),
+							new ExceptionFilter().setId("uncaught").setLabel("Uncaught exceptions").setDefaultOn(true)));
 			return lastHandler;
 		}, aIn, aOut);
 		client = LoupeConnection.open(new LoupeEndpoint.Handler() {
@@ -347,6 +364,32 @@ public class TestInspection {
 		call("resume", "t1", null);
 		call("pause", "t1", null);
 		assertEquals(LoupeException.STALE_ID, fails("setVariable", "t1", map("id", "s0@1", "name", "n", "value", "1")).getCode());
+	}
+
+	@Test
+	public void exceptionFilters() throws Exception {
+		assertEquals("filters [uncaught]", seenAfterCall("setExceptionFilters", map("filters", List.of("uncaught"))));
+		assertEquals("filters []", seenAfterCall("setExceptionFilters", map("filters", List.of())));
+		assertEquals(LoupeException.INVALID_PARAMS, fails("setExceptionFilters", "t1", map("filters", List.of("nope"))).getCode());
+		assertEquals(LoupeException.INVALID_PARAMS, fails("setExceptionFilters", "t1", map()).getCode());
+		// allowed while running, too
+		call("resume", "t1", null);
+		call("setExceptionFilters", "t1", map("filters", List.of("all")));
+	}
+
+	private String seenAfterCall(String method, Object params) throws Exception {
+		call(method, "t1", params);
+		return backend.seen.get(backend.seen.size()-1);
+	}
+
+	@Test
+	public void exceptionInfo() throws Exception {
+		Object r = call("exceptionInfo", "t1", map("thread", 1L));
+		assertEquals("{\"id\":\"RangeError\",\"description\":\"index 9 out of range\"}", Json.write(r));
+		assertEquals("exceptionInfo 1", backend.seen.get(backend.seen.size()-1));
+		call("exceptionInfo", "t1", null);
+		call("resume", "t1", null);
+		assertEquals(LoupeException.WRONG_STATE, fails("exceptionInfo", "t1", null).getCode());
 	}
 
 	@Test

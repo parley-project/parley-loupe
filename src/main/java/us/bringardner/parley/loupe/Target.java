@@ -162,6 +162,23 @@ public final class Target {
 	}
 
 	/**
+	 * The target stopped on an exception (reason "exception"); like
+	 * {@link #pausedWith}. The description, usually the exception's message, goes to the
+	 * client with the stop.
+	 */
+	public TargetStateEvent pausedOnException(String description, java.util.function.Supplier<Snapshot> snapshot) {
+		synchronized (this) {
+			TargetStateEvent e = machine.move(TargetState.PAUSED, "exception");
+			e.setDescription(description);
+			if( registry.hasFeature(Loupe.FEATURE_SNAPSHOT) && snapshot != null ) {
+				e.setSnapshot(snapshot.get());
+			}
+			send(e);
+			return e;
+		}
+	}
+
+	/**
 	 * The target ended; this is final.
 	 * @param exitCode or null
 	 * @throws LoupeException wrongState if it has already

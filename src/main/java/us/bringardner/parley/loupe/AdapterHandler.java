@@ -40,6 +40,9 @@ import us.bringardner.parley.loupe.protocol.BreakpointResult;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
 import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.ExceptionFilter;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoParams;
+import us.bringardner.parley.loupe.protocol.SetExceptionFiltersParams;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.LocalsParams;
 import us.bringardner.parley.loupe.protocol.ObjectChangesParams;
@@ -82,6 +85,7 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 	private volatile Object launchSchema;
 	private volatile Object attachSchema;
 	private volatile LoupeEndpoint.Handler fallback;
+	private volatile List<ExceptionFilter> exceptionFilters = List.of();
 	private volatile boolean welcomed;
 
 	public AdapterHandler(LoupeEndpoint endpoint, TargetBackend backend) {
@@ -115,6 +119,12 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 	/** A JSON Schema for the args of attach, published in the welcome (null: can't attach). */
 	public AdapterHandler setAttachSchema(Object schema) {
 		this.attachSchema = schema;
+		return this;
+	}
+
+	/** The kinds of exception the adapter can stop on, published in the welcome (default: none). */
+	public AdapterHandler setExceptionFilters(List<ExceptionFilter> filters) {
+		this.exceptionFilters = List.copyOf(filters);
 		return this;
 	}
 
@@ -195,6 +205,14 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			return inspect(target, method, params, SetVariableParams::fromJson,
 					(t, p) -> fresh(t, p.getId()),
 					(t, p) -> backend.setVariable(t, p));
+		case Loupe.SET_EXCEPTION_FILTERS:
+			return setExceptionFilters(target, params);
+		case Loupe.EXCEPTION_INFO:
+			// every member is optional: no params is the same as {}
+			return inspect(target, method, params == null ? new LinkedHashMap<String,Object>() : params, ExceptionInfoParams::fromJson,
+					(t, p) -> {
+					},
+					(t, p) -> backend.exceptionInfo(t, p));
 		case Loupe.COMPLETIONS:
 			return inspect(target, method, params, CompletionsParams::fromJson,
 					(t, p) -> {
@@ -243,6 +261,7 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 		Welcome w = Handshake.accept(hello, protocols, features, adapter, launchSchema);
 		w.setAttachSchema(attachSchema);
 		w.setMethods(methods());
+		w.setExceptionFilters(exceptionFilters.isEmpty() ? null : exceptionFilters);
 		registry.setFeatures(w.getFeatures());
 		welcomed = true;
 		return w.toJson();
@@ -255,7 +274,11 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 			ret.add(Loupe.ATTACH);
 		}
 		for(String m : List.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
-				Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE)) {
+				Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.OBJECT_CHANGES, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE,
+				Loupe.SET_EXCEPTION_FILTERS, Loupe.EXCEPTION_INFO)) {
+			if( Loupe.SET_EXCEPTION_FILTERS.equals(m) && exceptionFilters.isEmpty()) {
+				continue;
+			}
 			if( backend.supports(m)) {
 				ret.add(m);
 			}
@@ -502,6 +525,36 @@ public class AdapterHandler implements LoupeEndpoint.Handler {
 		t.require(TargetState.RUNNING, TargetState.PAUSED);
 		CompletableFuture<List<ThreadInfo>> f = backend.threads(t);
 		return f.thenApply(list -> new ThreadsResult().setThreads(list).toJson());
+	}
+
+	private CompletableFuture<Object> setExceptionFilters(String target, Object params) {
+		if( exceptionFilters.isEmpty()) {
+			// there is nothing a client could name
+			registry.get(target);
+			throw new LoupeException(LoupeException.NOT_SUPPORTED, "This adapter has no exception filters");
+		}
+		Target t = controllable(target, Loupe.SET_EXCEPTION_FILTERS);
+		SetExceptionFiltersParams p;
+		try {
+			p = SetExceptionFiltersParams.fromJson(params);
+		} catch (JsonException e) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, e.getMessage());
+		}
+		if( p == null ) {
+			throw new LoupeException(LoupeException.INVALID_PARAMS, "setExceptionFilters needs params");
+		}
+		for(String id : p.getFilters()) {
+			boolean known = false;
+			for(ExceptionFilter f : exceptionFilters) {
+				known |= f.getId().equals(id);
+			}
+			if( !known ) {
+				throw new LoupeException(LoupeException.INVALID_PARAMS, "Unknown exception filter "+id);
+			}
+		}
+		t.require(TargetState.RUNNING, TargetState.PAUSED);
+		return done(call(() -> backend.setExceptionFilters(t, p.getFilters())), e -> {
+		});
 	}
 
 	private CompletableFuture<Object> objectChanges(String target, Object params) {

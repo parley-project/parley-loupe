@@ -68,6 +68,8 @@ import us.bringardner.parley.dap.protocol.Scope;
 import us.bringardner.parley.dap.protocol.ScopesArguments;
 import us.bringardner.parley.dap.protocol.SetBreakpointsArguments;
 import us.bringardner.parley.dap.protocol.SetBreakpointsResponseBody;
+import us.bringardner.parley.dap.protocol.ExceptionInfoArguments;
+import us.bringardner.parley.dap.protocol.SetExceptionBreakpointsArguments;
 import us.bringardner.parley.dap.protocol.SetVariableArguments;
 import us.bringardner.parley.dap.protocol.StackFrame;
 import us.bringardner.parley.dap.protocol.StackTraceArguments;
@@ -88,6 +90,9 @@ import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.CompletionsResult;
 import us.bringardner.parley.loupe.protocol.EvaluateParams;
 import us.bringardner.parley.loupe.protocol.EvaluateResult;
+import us.bringardner.parley.loupe.protocol.ExceptionFilter;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoParams;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoResult;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -112,7 +117,7 @@ public class TestDapBridge {
 		@Override
 		public boolean supports(String method) {
 			return Set.of(Loupe.RESUME, Loupe.STEP, Loupe.PAUSE, Loupe.TERMINATE, Loupe.THREADS, Loupe.FRAMES,
-					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE).contains(method);
+					Loupe.SCOPES, Loupe.LOCALS, Loupe.CHILDREN, Loupe.EVALUATE, Loupe.COMPLETIONS, Loupe.SET_VARIABLE, Loupe.SET_EXCEPTION_FILTERS, Loupe.EXCEPTION_INFO).contains(method);
 		}
 
 		/** The stop all the stack requests answer from. */
@@ -195,6 +200,19 @@ public class TestDapBridge {
 		}
 
 		@Override
+		public CompletableFuture<Void> setExceptionFilters(Target target, List<String> filters) {
+			calls.add("filters "+filters);
+			return CompletableFuture.completedFuture(null);
+		}
+
+		@Override
+		public CompletableFuture<ExceptionInfoResult> exceptionInfo(Target target, ExceptionInfoParams p) {
+			calls.add("exceptionInfo "+p.getThread());
+			return CompletableFuture.completedFuture(new ExceptionInfoResult().setId("RangeError").setDescription("index 9 out of range")
+					.setTypeName("RangeError").setMessage("index 9 out of range").setStackTrace("at main (a.fsh:3)"));
+		}
+
+		@Override
 		public CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams p) {
 			calls.add("set "+p.getId()+" "+p.getName()+" = "+p.getValue());
 			return CompletableFuture.completedFuture(new SetVariableResult().setValue(Value.of(Long.parseLong(p.getValue()))));
@@ -256,7 +274,9 @@ public class TestDapBridge {
 		PipedInputStream bIn = new PipedInputStream(lOut, 1<<16);
 
 		loupe = LoupeConnection.serve(ep -> {
-			handler = new AdapterHandler(ep, backend).setFeatures(List.of(Loupe.FEATURE_SNAPSHOT));
+			handler = new AdapterHandler(ep, backend).setFeatures(List.of(Loupe.FEATURE_SNAPSHOT))
+					.setExceptionFilters(List.of(new ExceptionFilter().setId("all").setLabel("All exceptions"),
+							new ExceptionFilter().setId("uncaught").setLabel("Uncaught exceptions").setDefaultOn(true)));
 			return handler;
 		}, lIn, lOut);
 		dap = DapBridge.open(dIn, dOut, bIn, bOut);
@@ -328,6 +348,11 @@ public class TestDapBridge {
 		assertTrue(caps.getSupportsEvaluateForHovers());
 		assertTrue(caps.getSupportsCompletionsRequest());
 		assertTrue(caps.getSupportsSetVariable());
+		assertTrue(caps.getSupportsExceptionInfoRequest());
+		assertEquals(2, caps.getExceptionBreakpointFilters().size());
+		assertEquals("uncaught", caps.getExceptionBreakpointFilters().get(1).getFilter());
+		assertEquals("Uncaught exceptions", caps.getExceptionBreakpointFilters().get(1).getLabel());
+		assertTrue(caps.getExceptionBreakpointFilters().get(1).getDefault());
 		get(adapter.launch(LaunchRequestArguments.fromJson(Json.parse(json))));
 		assertEquals("initialized", event());
 	}
@@ -493,6 +518,24 @@ public class TestDapBridge {
 		assertTrue(e.getCause().getMessage().contains("Unknown variablesReference"), e.getCause().getMessage());
 		assertTrue(e.getCause() instanceof us.bringardner.parley.dap.DapException);
 		assertTrue(LoupeException.class != null);
+	}
+
+	@Test
+	public void exceptionsStopAndCanBeAskedAbout() throws Exception {
+		launch("{\"script\":\"a.fsh\"}");
+		get(adapter.setExceptionBreakpoints(SetExceptionBreakpointsArguments.fromJson(Json.parse("{\"filters\":[\"all\"]}"))));
+		assertTrue(backend.calls.contains("filters [all]"));
+		get(adapter.configurationDone(new ConfigurationDoneArguments()));
+
+		Target t = handler.getTargets().get("t1");
+		t.pausedOnException("index 9 out of range", () -> Backend.snapshot(t));
+		assertEquals("stopped exception thread=1 hit=null", event());
+
+		var info = get(adapter.exceptionInfo(new ExceptionInfoArguments().setThreadId(1)));
+		assertEquals("RangeError", info.getExceptionId());
+		assertEquals("always", info.getBreakMode());
+		assertEquals("index 9 out of range", info.getDetails().getMessage());
+		assertEquals("at main (a.fsh:3)", info.getDetails().getStackTrace());
 	}
 
 	@Test

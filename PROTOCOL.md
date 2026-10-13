@@ -113,6 +113,15 @@ event. If the adapter can't start a `resume` or `step` after the target was anno
 running, the target is announced as paused again (reason `resumeFailed` or `stepFailed`,
 a new generation) and the request fails.
 
+### Exceptions
+
+The adapter publishes the kinds of exception it can stop on in the welcome:
+`"exceptionFilters":[{"id":"uncaught","label":"Uncaught exceptions","defaultOn":true}, ...]`.
+`setExceptionFilters {filters:[id...]}` turns exactly those on (and the rest off); it is
+allowed while the target is running or paused, and an id that was not published is
+`invalidParams`. A stop on an exception is `targetState` paused with reason `exception` and
+`description` (the message); `exceptionInfo` gives the details.
+
 ## 5. Stop snapshot
 
 `targetState` to `paused` carries what the IDE shows next, so it need not ask:
@@ -148,6 +157,7 @@ fail with `wrongState`. An adapter that doesn't implement one fails it with `not
 | `evaluate` | `{expression, frame?, context?}` | `{value: Value}`; `context` is `watch`, `repl`, `hover` or `clipboard` (a hover must not change the program); no `frame` means the top frame of the stopped thread; an error in the expression is `failed` with the message for the user |
 | `completions` | `{text, offset, frame?}` | `{items:[{label, text?, detail?, type?, start?, length?}]}`; `offset` counts characters from 0 and is within `text`; `start` and `length` are the part of `text` replaced |
 | `setVariable` | `{id, name, value}` | `{value: Value}`; `id` is an object, map, array or scope, `name` the variable (an index for an array), `value` an expression for the new value; an error is `failed` with the message for the user |
+| `exceptionInfo` | `{thread?}` | `{id, description?, breakMode?, typeName?, message?, stackTrace?}`; fails if the thread did not stop on an exception |
 | `objectChanges` | `{since}` | `{generation, changed:[name], gone:[name]}`; needs the `objectChanges` feature, and `since` from 0 to the current generation |
 
 `start` counts from 0 and defaults to 0; `count` left out means as many as the adapter will
@@ -235,6 +245,8 @@ session is one target, `t1`.
 | `threads` | `threads` (or the snapshot) |
 | `evaluate` (watch, repl, hover, clipboard) | `evaluate`; a result with parts gets a `variablesReference` |
 | `setVariable` | `setVariable` on the container the `variablesReference` stands for |
+| `setExceptionBreakpoints` | `setExceptionFilters` (the adapter's filters are DAP's exception breakpoint filters; filter conditions and exception options are not mapped) |
+| `exceptionInfo` | `exceptionInfo`; the stop's `description` is the stopped event's `text` |
 | `completions` | `completions`; DAP's line and column become a character offset into the text |
 | `terminate`, `disconnect` | `terminate` (disconnect only when the bridge launched the target, or `terminateDebuggee`) |
 | frame and `variablesReference` numbers | the bridge's table of Loupe ids, dropped at every state change |
@@ -242,7 +254,7 @@ session is one target, `t1`.
 The capabilities the DAP client is told (terminate, evaluate for hovers, completions) follow
 the welcome's `methods`.
 
-Not mapped: function, data and exception breakpoints, modules, memory. `objectChanges` is not used: DAP cannot say "what changed since".
+Not mapped: function and data breakpoints, modules, memory. `objectChanges` is not used: DAP cannot say "what changed since".
 
 ## 10. Decided and open
 

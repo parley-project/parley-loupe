@@ -54,6 +54,8 @@ public final class Loupe {
 	public static final String EVALUATE = "evaluate";
 	public static final String COMPLETIONS = "completions";
 	public static final String SET_VARIABLE = "setVariable";
+	public static final String SET_EXCEPTION_FILTERS = "setExceptionFilters";
+	public static final String EXCEPTION_INFO = "exceptionInfo";
 
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";

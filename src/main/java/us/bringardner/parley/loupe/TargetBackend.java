@@ -31,6 +31,8 @@ import us.bringardner.parley.loupe.protocol.ChildrenParams;
 import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.CompletionsResult;
 import us.bringardner.parley.loupe.protocol.EvaluateParams;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoParams;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoResult;
 import us.bringardner.parley.loupe.protocol.EvaluateResult;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -87,7 +89,8 @@ public interface TargetBackend {
 
 	/**
 	 * Which of the methods resume, step, pause, terminate, threads, frames, scopes, locals,
-	 * children, objectChanges, evaluate, completions and setVariable (names in
+	 * children, objectChanges, evaluate, completions, setVariable, setExceptionFilters and
+	 * exceptionInfo (names in
 	 * {@link us.bringardner.parley.loupe.protocol.Loupe}) the backend implements. The others
 	 * are refused with notSupported before the target's state is touched.
 	 */
@@ -192,6 +195,20 @@ public interface TargetBackend {
 	 * with a LoupeException {@code failed} and the message for the user.
 	 */
 	default CompletableFuture<SetVariableResult> setVariable(Target target, SetVariableParams params) {
+		return notSupportedResult();
+	}
+
+	/**
+	 * Sets which kinds of exception stop the target: exactly these filters (ids the adapter
+	 * published, checked by the handler) are on. When one stops it, the backend calls
+	 * {@link Target#pausedOnException}.
+	 */
+	default CompletableFuture<Void> setExceptionFilters(Target target, List<String> filters) {
+		return notSupported();
+	}
+
+	/** What the stopped thread is stopped on; fails if it didn't stop on an exception. */
+	default CompletableFuture<ExceptionInfoResult> exceptionInfo(Target target, ExceptionInfoParams params) {
 		return notSupportedResult();
 	}
 

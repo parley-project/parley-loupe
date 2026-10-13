@@ -40,6 +40,7 @@ public class Welcome implements JsonValue {
 	private Object launchSchema;
 	private Object attachSchema;
 	private List<String> methods;
+	private List<ExceptionFilter> exceptionFilters;
 
 	/** The protocol version chosen. */
 	public String getProtocol() {
@@ -101,6 +102,16 @@ public class Welcome implements JsonValue {
 		return this;
 	}
 
+	/** The kinds of exception the target can stop on; see setExceptionFilters. */
+	public List<ExceptionFilter> getExceptionFilters() {
+		return exceptionFilters;
+	}
+
+	public Welcome setExceptionFilters(List<ExceptionFilter> exceptionFilters) {
+		this.exceptionFilters = exceptionFilters;
+		return this;
+	}
+
 	@Override
 	public Object toJson() {
 		Map<String,Object> json = new LinkedHashMap<>();
@@ -110,6 +121,7 @@ public class Welcome implements JsonValue {
 		JsonValues.put(json, "launchSchema", launchSchema);
 		JsonValues.put(json, "attachSchema", attachSchema);
 		JsonValues.put(json, "methods", methods);
+		JsonValues.put(json, "exceptionFilters", JsonValues.toJson(exceptionFilters, JsonValues::toJson));
 		return json;
 	}
 
@@ -136,6 +148,7 @@ public class Welcome implements JsonValue {
 		ret.launchSchema = JsonValues.any(m.get("launchSchema"), what+".launchSchema");
 		ret.attachSchema = JsonValues.any(m.get("attachSchema"), what+".attachSchema");
 		ret.methods = JsonValues.list(m.get("methods"), what+".methods", JsonValues::string);
+		ret.exceptionFilters = JsonValues.list(m.get("exceptionFilters"), what+".exceptionFilters", ExceptionFilter::fromJson);
 		return ret;
 	}
 }

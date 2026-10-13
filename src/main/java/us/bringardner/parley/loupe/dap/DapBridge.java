@@ -57,6 +57,10 @@ import us.bringardner.parley.dap.protocol.ContinuedEventBody;
 import us.bringardner.parley.dap.protocol.DisconnectArguments;
 import us.bringardner.parley.dap.protocol.EvaluateArguments;
 import us.bringardner.parley.dap.protocol.EvaluateResponseBody;
+import us.bringardner.parley.dap.protocol.ExceptionBreakpointsFilter;
+import us.bringardner.parley.dap.protocol.ExceptionDetails;
+import us.bringardner.parley.dap.protocol.ExceptionInfoArguments;
+import us.bringardner.parley.dap.protocol.ExceptionInfoResponseBody;
 import us.bringardner.parley.dap.protocol.ExitedEventBody;
 import us.bringardner.parley.dap.protocol.IDebugAdapter;
 import us.bringardner.parley.dap.protocol.IDebugClient;
@@ -68,6 +72,8 @@ import us.bringardner.parley.dap.protocol.Scope;
 import us.bringardner.parley.dap.protocol.ScopesArguments;
 import us.bringardner.parley.dap.protocol.ScopesResponseBody;
 import us.bringardner.parley.dap.protocol.SetBreakpointsArguments;
+import us.bringardner.parley.dap.protocol.SetExceptionBreakpointsArguments;
+import us.bringardner.parley.dap.protocol.SetExceptionBreakpointsResponseBody;
 import us.bringardner.parley.dap.protocol.SetBreakpointsResponseBody;
 import us.bringardner.parley.dap.protocol.Source;
 import us.bringardner.parley.dap.protocol.SourceBreakpoint;
@@ -98,6 +104,10 @@ import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.CompletionsResult;
 import us.bringardner.parley.loupe.protocol.EvaluateParams;
 import us.bringardner.parley.loupe.protocol.EvaluateResult;
+import us.bringardner.parley.loupe.protocol.ExceptionFilter;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoParams;
+import us.bringardner.parley.loupe.protocol.ExceptionInfoResult;
+import us.bringardner.parley.loupe.protocol.SetExceptionFiltersParams;
 import us.bringardner.parley.loupe.protocol.Frame;
 import us.bringardner.parley.loupe.protocol.FramesParams;
 import us.bringardner.parley.loupe.protocol.FramesResult;
@@ -148,8 +158,12 @@ import us.bringardner.parley.loupe.protocol.VariablesResult;
  * <b>Evaluate and completions</b> go to the Loupe methods of the same names; the
  * capabilities the client is told follow the methods the Loupe adapter says it has.
  * <p>
- * <b>Not mapped:</b> function, data and exception breakpoints, exceptions, modules, memory:
- * they answer notSupported.
+ * <b>Exceptions:</b> the adapter's exception filters become DAP's exception breakpoint
+ * filters, {@code setExceptionBreakpoints} sends the chosen ones, and {@code exceptionInfo}
+ * is mapped. Filter conditions and exception options are not.
+ * <p>
+ * <b>Not mapped:</b> function and data breakpoints, modules, memory: they answer
+ * notSupported.
  * <p>
  * {@code setVariable} works on the variables the client was given by a scope or a variable:
  * the reference names the Loupe container.
@@ -233,6 +247,8 @@ public final class DapBridge implements IDebugAdapter {
 	private int nextBreakpoint = 1;
 	private boolean columnsStartAt1 = true;
 	private boolean linesStartAt1 = true;
+	private boolean hasExceptionFilters;
+	private List<String> pendingExceptionFilters;
 
 	/**
 	 * @param client the DAP client, for events
@@ -347,6 +363,9 @@ public final class DapBridge implements IDebugAdapter {
 		}
 		String reason = ev.getReason() == null ? "pause" : ev.getReason();
 		StoppedEventBody b = new StoppedEventBody().setThreadId(thread).setAllThreadsStopped(true);
+		if( ev.getDescription() != null ) {
+			b.setText(ev.getDescription());
+		}
 		switch (reason) {
 		case "breakpoint":
 		case "step":
@@ -489,7 +508,9 @@ public final class DapBridge implements IDebugAdapter {
 					.setSupportsTerminateRequest(methods.contains(Loupe.TERMINATE))
 					.setSupportsEvaluateForHovers(methods.contains(Loupe.EVALUATE))
 					.setSupportsCompletionsRequest(methods.contains(Loupe.COMPLETIONS))
-					.setSupportsSetVariable(methods.contains(Loupe.SET_VARIABLE));
+					.setSupportsSetVariable(methods.contains(Loupe.SET_VARIABLE))
+					.setSupportsExceptionInfoRequest(methods.contains(Loupe.EXCEPTION_INFO))
+					.setExceptionBreakpointFilters(exceptionFilters(w.getExceptionFilters()));
 		});
 	}
 
@@ -556,6 +577,56 @@ public final class DapBridge implements IDebugAdapter {
 		for(Bp bp : unsent) {
 			add(bp);
 		}
+		List<String> filters;
+		synchronized (this) {
+			filters = pendingExceptionFilters;
+			pendingExceptionFilters = null;
+		}
+		if( filters != null ) {
+			loupe.request(Loupe.SET_EXCEPTION_FILTERS, TARGET, new SetExceptionFiltersParams().setFilters(filters).toJson());
+		}
+	}
+
+	private List<ExceptionBreakpointsFilter> exceptionFilters(List<ExceptionFilter> filters) {
+		synchronized (this) {
+			hasExceptionFilters = filters != null && !filters.isEmpty();
+		}
+		if( filters == null ) {
+			return null;
+		}
+		List<ExceptionBreakpointsFilter> ret = new ArrayList<>();
+		for(ExceptionFilter f : filters) {
+			ret.add(new ExceptionBreakpointsFilter().setFilter(f.getId()).setLabel(f.getLabel())
+					.setDescription(f.getDescription()).setDefault(f.getDefaultOn()));
+		}
+		return ret;
+	}
+
+	@Override
+	public CompletableFuture<SetExceptionBreakpointsResponseBody> setExceptionBreakpoints(SetExceptionBreakpointsArguments args) {
+		List<String> filters = args.getFilters() == null ? new ArrayList<>() : args.getFilters();
+		synchronized (this) {
+			if( !hasExceptionFilters ) {
+				// nothing to choose from (a client sends an empty list anyway)
+				return CompletableFuture.completedFuture(new SetExceptionBreakpointsResponseBody());
+			}
+			if( !launched ) {
+				pendingExceptionFilters = filters;
+				return CompletableFuture.completedFuture(new SetExceptionBreakpointsResponseBody());
+			}
+		}
+		return ask(Loupe.SET_EXCEPTION_FILTERS, new SetExceptionFiltersParams().setFilters(filters), (r, w) -> r)
+				.thenApply(r -> new SetExceptionBreakpointsResponseBody());
+	}
+
+	@Override
+	public CompletableFuture<ExceptionInfoResponseBody> exceptionInfo(ExceptionInfoArguments args) {
+		ExceptionInfoParams p = new ExceptionInfoParams().setThread(args.getThreadId());
+		return ask(Loupe.EXCEPTION_INFO, p, ExceptionInfoResult::fromJson).thenApply(r -> new ExceptionInfoResponseBody()
+				.setExceptionId(r.getId()).setDescription(r.getDescription())
+				.setBreakMode(r.getBreakMode() == null ? "always" : r.getBreakMode())
+				.setDetails(new ExceptionDetails().setMessage(r.getMessage()).setTypeName(r.getTypeName())
+						.setStackTrace(r.getStackTrace())));
 	}
 
 	@Override

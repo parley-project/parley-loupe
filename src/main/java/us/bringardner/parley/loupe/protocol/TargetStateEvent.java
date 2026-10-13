@@ -39,6 +39,7 @@ public class TargetStateEvent implements JsonValue {
 	private String reason;
 	private Integer generation;
 	private List<String> breakpoints;
+	private String description;
 	private Integer exitCode;
 	private Snapshot snapshot;
 
@@ -92,6 +93,16 @@ public class TargetStateEvent implements JsonValue {
 		return this;
 	}
 
+	/** For paused: text to show the user about the stop; for an exception, its message. */
+	public String getDescription() {
+		return description;
+	}
+
+	public TargetStateEvent setDescription(String description) {
+		this.description = description;
+		return this;
+	}
+
 	/** For terminated: the exit code, if there is one. */
 	public Integer getExitCode() {
 		return exitCode;
@@ -120,6 +131,7 @@ public class TargetStateEvent implements JsonValue {
 		JsonValues.put(json, "reason", reason);
 		JsonValues.put(json, "generation", generation);
 		JsonValues.put(json, "breakpoints", breakpoints);
+		JsonValues.put(json, "description", description);
 		JsonValues.put(json, "exitCode", exitCode);
 		JsonValues.put(json, "snapshot", JsonValues.toJson(snapshot));
 		return json;
@@ -144,6 +156,7 @@ public class TargetStateEvent implements JsonValue {
 		ret.reason = JsonValues.string(m.get("reason"), what+".reason");
 		ret.generation = JsonValues.integer(m.get("generation"), what+".generation");
 		ret.breakpoints = JsonValues.list(m.get("breakpoints"), what+".breakpoints", JsonValues::string);
+		ret.description = JsonValues.string(m.get("description"), what+".description");
 		ret.exitCode = JsonValues.integer(m.get("exitCode"), what+".exitCode");
 		ret.snapshot = Snapshot.fromJson(m.get("snapshot"), what+".snapshot");
 		return ret;
