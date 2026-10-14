@@ -29,6 +29,7 @@ import java.util.List;
 
 import us.bringardner.parley.loupe.protocol.BreakpointStatusEvent;
 import us.bringardner.parley.loupe.protocol.Loupe;
+import us.bringardner.parley.loupe.protocol.OutputEvent;
 import us.bringardner.parley.loupe.protocol.ObjectId;
 import us.bringardner.parley.loupe.protocol.Location;
 import us.bringardner.parley.loupe.protocol.Snapshot;
@@ -202,6 +203,16 @@ public final class Target {
 			send(e);
 			return e;
 		}
+	}
+
+	/**
+	 * Text the debuggee wrote, sent to the client as an output event. Unlike the state
+	 * changes it can be sent in any state.
+	 * @param category {@link OutputEvent#STDOUT}, {@link OutputEvent#STDERR} or
+	 *        {@link OutputEvent#CONSOLE}; null is stdout
+	 */
+	public void output(String category, String text) {
+		registry.send(Loupe.OUTPUT, id, new OutputEvent().setCategory(category).setText(text).toJson());
 	}
 
 	void send(BreakpointStatusEvent e) {

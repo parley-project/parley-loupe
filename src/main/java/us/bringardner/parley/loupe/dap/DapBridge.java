@@ -86,6 +86,7 @@ import us.bringardner.parley.dap.protocol.StepInArguments;
 import us.bringardner.parley.dap.protocol.StepOutArguments;
 import us.bringardner.parley.dap.protocol.StoppedEventBody;
 import us.bringardner.parley.dap.protocol.TerminateArguments;
+import us.bringardner.parley.dap.protocol.OutputEventBody;
 import us.bringardner.parley.dap.protocol.TerminatedEventBody;
 import us.bringardner.parley.dap.protocol.ThreadsResponseBody;
 import us.bringardner.parley.dap.protocol.Variable;
@@ -99,6 +100,7 @@ import us.bringardner.parley.loupe.protocol.AddBreakpointParams;
 import us.bringardner.parley.loupe.protocol.BreakpointResult;
 import us.bringardner.parley.loupe.protocol.BreakpointStatus;
 import us.bringardner.parley.loupe.protocol.BreakpointStatusEvent;
+import us.bringardner.parley.loupe.protocol.OutputEvent;
 import us.bringardner.parley.loupe.protocol.ChildrenParams;
 import us.bringardner.parley.loupe.protocol.CompletionsParams;
 import us.bringardner.parley.loupe.protocol.CompletionsResult;
@@ -301,6 +303,12 @@ public final class DapBridge implements IDebugAdapter {
 						onTargetState(TargetStateEvent.fromJson(params));
 					} else if( Loupe.BREAKPOINT_STATUS.equals(event)) {
 						onBreakpointStatus(BreakpointStatusEvent.fromJson(params));
+					} else if( Loupe.OUTPUT.equals(event)) {
+						OutputEvent o = OutputEvent.fromJson(params);
+						String category = OutputEvent.STDERR.equals(o.getCategory()) ? OutputEventBody.Category.STDERR
+								: OutputEvent.CONSOLE.equals(o.getCategory()) ? OutputEventBody.Category.CONSOLE
+								: OutputEventBody.Category.STDOUT;
+						client.output(new OutputEventBody().setCategory(category).setOutput(o.getText()));
 					}
 				} catch (JsonException e) {
 					// an event the bridge can't read is ignored

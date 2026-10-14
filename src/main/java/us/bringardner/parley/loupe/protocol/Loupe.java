@@ -60,6 +60,7 @@ public final class Loupe {
 	/** Events. */
 	public static final String TARGET_STATE = "targetState";
 	public static final String BREAKPOINT_STATUS = "breakpointStatus";
+	public static final String OUTPUT = "output";
 
 	private Loupe() {
 	}
