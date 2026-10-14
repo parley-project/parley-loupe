@@ -76,6 +76,23 @@ c.getEndpoint().request(Loupe.LAUNCH, null, new LaunchParams()
 Requests and events are plain JSON values (`LoupeEndpoint.request(method, target, params)`);
 the classes in `us.bringardner.parley.loupe.protocol` give them types.
 
+## A reference backend
+
+`us.bringardner.parley.loupe.toy` holds a complete backend for a tiny line-oriented
+language (`ToyLang`: integers, strings, lists, functions, `if`/`while`, `throw`). `ToyBackend`
+runs a program on its own thread, stops it before a statement for breakpoints (with
+conditions, hit counts and log messages), steps (over, in, out), pause and runtime errors, and
+answers every request an IDE makes. Read it when writing the backend for a real runtime.
+
+```
+java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain                 # Loupe on stdin/stdout
+java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain --listen 4711   # Loupe on a socket
+java -cp ... us.bringardner.parley.loupe.dap.DapBridgeMain --exec java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain
+```
+
+The last is a DAP debugger an editor can start. Launch arguments: `program` (a path) or
+`source` and `name`.
+
 ## Debugging from VS Code or another DAP client
 
 `DapBridgeMain` is a DAP adapter that is a Loupe client. An IDE starts it, and it connects to

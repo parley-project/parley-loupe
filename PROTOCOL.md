@@ -216,6 +216,16 @@ event  {"event":"breakpointStatus","target":"t1","params":{
 `status` is `pending`, `verified`, `rejected` (with `message`) or `removed`. Adding an id
 that exists replaces it. There is no replace-all-in-a-file request.
 
+### Output
+
+Text the debuggee writes reaches the client as an event, in any state:
+
+```
+event  {"event":"output","target":"t1","params":{"category":"stdout","text":"hello\n"}}
+```
+
+`category` is `stdout` (the default), `stderr` or `console` (the adapter's own remarks).
+
 ## 8. Cancellation and multiple targets
 
 `{"id":8,"method":"cancel","params":{"requestId":7}}`: the request 7 ends with error
@@ -240,6 +250,7 @@ session is one target, `t1`.
 | `continued` event | `targetState` to `running` that the client did not ask for |
 | `exited`, `terminated` events | `targetState` to `terminated` (`exitCode`) |
 | `breakpoint` event | `breakpointStatus` |
+| `output` event | `output` (`category` stdout, stderr or console) |
 | `continue`, `next`, `stepIn`, `stepOut`, `pause` | `resume`, `step {kind: over, in, out}`, `pause` |
 | `stackTrace`, `scopes`, `variables` | `frames` (or the snapshot), `scopes`, `children` (or the snapshot's locals) |
 | `threads` | `threads` (or the snapshot) |
@@ -269,9 +280,14 @@ Decided:
    `anyOf`, `oneOf`; other keywords are ignored and `$ref` is not supported.
 3. **Generations:** counted per target (section 6).
 
+The toy backend (`us.bringardner.parley.loupe.toy`) is the reference for what an adapter
+does with all of the above, and the test that the protocol is complete enough: it found the
+need for the `output` event.
+
 Open:
 
-4. Evaluate, completions, watch expressions, exceptions, modules, memory/disassembly: not
-   in this draft. Which does fsh-ide need first?
+4. Evaluate, completions, setVariable and exceptions are in (sections 6 and 7). Not in this
+   draft: modules, memory/disassembly, function and data breakpoints, watch expressions
+   that the adapter re-evaluates itself. Which does fsh-ide need first?
 5. Shared module for JSON and framing (`parley-json`): until then parley-loupe depends on
    parley-dap, which the bridge needs anyway.
