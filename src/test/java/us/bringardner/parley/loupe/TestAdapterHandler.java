@@ -54,7 +54,6 @@ import us.bringardner.parley.loupe.protocol.Location;
 import us.bringardner.parley.loupe.protocol.Loupe;
 import us.bringardner.parley.loupe.protocol.PeerInfo;
 import us.bringardner.parley.loupe.protocol.Snapshot;
-import us.bringardner.parley.loupe.protocol.Source;
 import us.bringardner.parley.loupe.protocol.Welcome;
 
 public class TestAdapterHandler {

@@ -742,7 +742,7 @@ public final class ToyLang {
 				if( open.isEmpty()) {
 					throw new ParseError("end without a block", line);
 				}
-				current = (List<Stmt>) open.remove(open.size()-1)[1];
+				current = statements(open.remove(open.size()-1)[1]);
 				continue;
 			} else if( word.equals("else")) {
 				ps.word();
@@ -1091,5 +1091,11 @@ public final class ToyLang {
 			}
 			return new Name(w, line);
 		}
+	}
+
+	/** A block's statement list, kept as Object in the parse stack. */
+	@SuppressWarnings("unchecked")
+	private static List<Stmt> statements(Object block) {
+		return (List<Stmt>) block;
 	}
 }
