@@ -78,16 +78,19 @@ the classes in `us.bringardner.parley.loupe.protocol` give them types.
 
 ## A reference backend
 
-`us.bringardner.parley.loupe.toy` holds a complete backend for a tiny line-oriented
+The tests hold a complete backend for a tiny line-oriented
 language (`ToyLang`: integers, strings, lists, functions, `if`/`while`, `throw`). `ToyBackend`
 runs a program on its own thread, stops it before a statement for breakpoints (with
 conditions, hit counts and log messages), steps (over, in, out), pause and runtime errors, and
-answers every request an IDE makes. Read it when writing the backend for a real runtime.
+answers every request an IDE makes. Read it when writing the backend for a real runtime:
+it's in [src/test/java/us/bringardner/parley/loupe/toy](src/test/java/us/bringardner/parley/loupe/toy)
+(package `us.bringardner.parley.loupe.toy`). It's an example, so it isn't in the published jar;
+to run it, build from source (`mvn test-compile`) and put `target/test-classes` on the class path:
 
 ```
-java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain                 # Loupe on stdin/stdout
-java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain --listen 4711   # Loupe on a socket
-java -cp ... us.bringardner.parley.loupe.dap.DapBridgeMain --exec java -cp ... us.bringardner.parley.loupe.toy.ToyAdapterMain
+java -cp target/classes:target/test-classes:... us.bringardner.parley.loupe.toy.ToyAdapterMain                 # Loupe on stdin/stdout
+java -cp target/classes:target/test-classes:... us.bringardner.parley.loupe.toy.ToyAdapterMain --listen 4711   # Loupe on a socket
+java -cp ... us.bringardner.parley.loupe.dap.DapBridgeMain --exec java -cp target/classes:target/test-classes:... us.bringardner.parley.loupe.toy.ToyAdapterMain
 ```
 
 The last is a DAP debugger an editor can start. Launch arguments: `program` (a path) or

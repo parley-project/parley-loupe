@@ -280,7 +280,7 @@ Decided:
    `anyOf`, `oneOf`; other keywords are ignored and `$ref` is not supported.
 3. **Generations:** counted per target (section 6).
 
-The toy backend (`us.bringardner.parley.loupe.toy`) is the reference for what an adapter
+The toy backend (`us.bringardner.parley.loupe.toy`, kept with parley-loupe's tests) is the reference for what an adapter
 does with all of the above, and the test that the protocol is complete enough: it found the
 need for the `output` event.
 
