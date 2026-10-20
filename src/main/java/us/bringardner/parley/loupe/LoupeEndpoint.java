@@ -100,7 +100,7 @@ public class LoupeEndpoint {
 		this.handler = handler;
 	}
 
-	/** Handle incoming messages on this executor instead of the receiving thread. */
+	/** Handle incoming messages on this executor instead of the receiving thread: still one at a time, in order. */
 	public void setExecutor(Executor executor) {
 		this.executor = executor;
 	}
@@ -227,10 +227,50 @@ public class LoupeEndpoint {
 	/** A message arrived (its JSON text). */
 	public void receive(String json) {
 		Executor ex = executor;
-		if( ex != null ) {
-			ex.execute(()->handle(json));
-		} else {
+		if( ex == null ) {
 			handle(json);
+			return;
+		}
+		// one at a time, in arrival order, whatever threads the executor has
+		inbox.add(json);
+		drainOn(ex);
+	}
+
+	/** Messages waiting for the executor, in arrival order. */
+	private final java.util.Queue<String> inbox = new java.util.concurrent.ConcurrentLinkedQueue<>();
+	/** True while a task on the executor is handling the inbox. */
+	private final java.util.concurrent.atomic.AtomicBoolean draining = new java.util.concurrent.atomic.AtomicBoolean();
+
+	private void drainOn(Executor ex) {
+		if( draining.compareAndSet(false, true) ) {
+			try {
+				ex.execute(this::drain);
+			} catch (RuntimeException rejected) {
+				draining.set(false);
+				throw rejected;
+			}
+		}
+	}
+
+	private void drain() {
+		try {
+			String json;
+			while( (json = inbox.poll()) != null ) {
+				handle(json);
+			}
+		} finally {
+			draining.set(false);
+			if( !inbox.isEmpty() ) {
+				Executor ex = executor;
+				if( ex != null ) {
+					drainOn(ex); // one came in as this task finished
+				} else {
+					String json;
+					while( (json = inbox.poll()) != null ) {
+						handle(json);
+					}
+				}
+			}
 		}
 	}
 

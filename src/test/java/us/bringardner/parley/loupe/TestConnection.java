@@ -25,6 +25,7 @@
 package us.bringardner.parley.loupe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -174,5 +175,45 @@ public class TestConnection {
 		ep.receive("{\"id\":99,\"result\":{}}");
 		assertEquals(3, errors.size());
 		assertNull(a.events.poll());
+	}
+
+	/** With an executor of several threads, messages are still handled one at a time, in order. */
+	@Test
+	public void anExecutorKeepsTheOrder() throws Exception {
+		List<String> seen = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+		java.util.concurrent.atomic.AtomicInteger inside = new java.util.concurrent.atomic.AtomicInteger();
+		java.util.concurrent.atomic.AtomicBoolean overlapped = new java.util.concurrent.atomic.AtomicBoolean();
+		LoupeEndpoint ep = new LoupeEndpoint(json -> {}, new LoupeEndpoint.Handler() {
+			@Override
+			public CompletableFuture<Object> request(String method, String target, Object params) {
+				return null;
+			}
+
+			@Override
+			public void event(String event, String target, Object params) {
+				if( inside.incrementAndGet() > 1 ) {
+					overlapped.set(true);
+				}
+				seen.add(event);
+				inside.decrementAndGet();
+			}
+		});
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+		try {
+			ep.setExecutor(pool);
+			List<String> sent = new java.util.ArrayList<>();
+			for (int i = 0; i < 2000; i++) {
+				sent.add("e" + i);
+				ep.receive("{\"event\":\"e" + i + "\"}");
+			}
+			long end = System.currentTimeMillis() + 10_000;
+			while( seen.size() < sent.size() && System.currentTimeMillis() < end ) {
+				Thread.sleep(10);
+			}
+			assertEquals(sent, seen, "in arrival order");
+			assertFalse(overlapped.get(), "one at a time");
+		} finally {
+			pool.shutdownNow();
+		}
 	}
 }
