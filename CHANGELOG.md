@@ -1,5 +1,7 @@
 # Changelog
 
+## parley-loupe 1.1.0 (unreleased)
+
 ## parley-loupe 1.0.0 (2026-10-21)
 
 First version.
