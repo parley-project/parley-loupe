@@ -82,6 +82,7 @@ public final class DapBridgeMain {
 			} catch (NumberFormatException e) {
 				throw new IllegalArgumentException("Bad port in "+spec);
 			}
+			@SuppressWarnings("resource")
 			Socket s = new Socket(spec.substring(0, colon), port);
 			return DapBridge.open(dapIn, dapOut, s.getInputStream(), s.getOutputStream());
 		}
