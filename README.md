@@ -1,6 +1,6 @@
 # parley-loupe
 
-**Loupe** is a debugging protocol for fsh and fsh-ide, designed as an alternative to the
+**Loupe** is a debugging protocol for fsh and Fsh Studio, designed as an alternative to the
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) (DAP), with a
 bridge so VS Code and other DAP clients can still debug a Loupe target.
 

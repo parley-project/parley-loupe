@@ -13,7 +13,7 @@
 
 	<artifactId>parley-loupe</artifactId>
 	<name>Parley Loupe</name>
-	<description>Loupe, a debugging protocol for fsh and fsh-ide: JSON messages with stop snapshots, typed values, stable object ids, per-target state machines and version negotiation, plus a bridge to the Debug Adapter Protocol.</description>
+	<description>Loupe, a debugging protocol for fsh and Fsh Studio: JSON messages with stop snapshots, typed values, stable object ids, per-target state machines and version negotiation, plus a bridge to the Debug Adapter Protocol.</description>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

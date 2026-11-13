@@ -1,6 +1,6 @@
 # Loupe protocol (draft 0)
 
-Loupe is the debugging protocol for fsh and fsh-ide. It keeps what DAP does well and fixes
+Loupe is the debugging protocol for fsh and Fsh Studio. It keeps what DAP does well and fixes
 what costs a client round trips or guesses. A bridge (`us.bringardner.parley.loupe.dap`)
 lets VS Code and other DAP clients debug a Loupe target.
 
@@ -35,7 +35,7 @@ event     {"event":"paused", "target":"t1", "params":{...}}
 ```
 -> {"id":1, "method":"hello", "params":{
      "protocols":["loupe/1"],
-     "client":{"name":"fsh-ide","version":"1.0"},
+     "client":{"name":"Fsh Studio","version":"1.0"},
      "features":["snapshot","objectChanges"]}}
 <- {"id":1, "result":{
      "protocol":"loupe/1",
@@ -288,6 +288,6 @@ Open:
 
 4. Evaluate, completions, setVariable and exceptions are in (sections 6 and 7). Not in this
    draft: modules, memory/disassembly, function and data breakpoints, watch expressions
-   that the adapter re-evaluates itself. Which does fsh-ide need first?
+   that the adapter re-evaluates itself. Which does Fsh Studio need first?
 5. Shared module for JSON and framing (`parley-json`): until then parley-loupe depends on
    parley-dap, which the bridge needs anyway.

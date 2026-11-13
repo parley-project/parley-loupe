@@ -63,13 +63,13 @@ public class TestProtocol {
 
 	@Test
 	public void helloAndWelcomeRoundTrip() throws Exception {
-		Hello h = new Hello().setProtocols(List.of("loupe/1")).setClient(new PeerInfo().setName("fsh-ide").setVersion("1.0"))
+		Hello h = new Hello().setProtocols(List.of("loupe/1")).setClient(new PeerInfo().setName("Fsh Studio").setVersion("1.0"))
 				.setFeatures(List.of(Loupe.FEATURE_SNAPSHOT));
 		String json = Json.write(h);
-		assertEquals("{\"protocols\":[\"loupe/1\"],\"client\":{\"name\":\"fsh-ide\",\"version\":\"1.0\"},\"features\":[\"snapshot\"]}", json);
+		assertEquals("{\"protocols\":[\"loupe/1\"],\"client\":{\"name\":\"Fsh Studio\",\"version\":\"1.0\"},\"features\":[\"snapshot\"]}", json);
 		Hello back = Hello.fromJson(Json.parse(json));
 		assertEquals(List.of("loupe/1"), back.getProtocols());
-		assertEquals("fsh-ide", back.getClient().getName());
+		assertEquals("Fsh Studio", back.getClient().getName());
 
 		Welcome w = new Welcome().setProtocol("loupe/1").setFeatures(List.of()).setLaunchSchema(Json.parse("{\"type\":\"object\"}"));
 		assertEquals(Map.of("type", "object"), Welcome.fromJson(Json.parse(Json.write(w))).getLaunchSchema());
